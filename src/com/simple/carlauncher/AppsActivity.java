@@ -80,6 +80,25 @@ public class AppsActivity extends Activity {
         });
         header.addView(theme);
 
+        TextView wpBtn = new TextView(this);
+        wpBtn.setTextSize(16);
+        wpBtn.setTextColor(Color.WHITE);
+        wpBtn.setPadding(dp(18), dp(10), dp(18), dp(10));
+        GradientDrawable wbg = new GradientDrawable();
+        wbg.setColor(0x33FFFFFF);
+        wbg.setCornerRadius(dp(22));
+        wpBtn.setBackground(wbg);
+        wpBtn.setText("Fondo: " + Ui.wallpaperLabel(this));
+        MainActivity.pressable(wpBtn);
+        wpBtn.setOnClickListener(v -> {
+            Ui.nextWallpaper(this);
+            wpBtn.setText("Fondo: " + Ui.wallpaperLabel(this));
+            recreate();
+        });
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(-2, -2);
+        wlp.leftMargin = dp(8);
+        header.addView(wpBtn, wlp);
+
         TextView setup = new TextView(this);
         setup.setText("Configurar");
         setup.setTextSize(16);

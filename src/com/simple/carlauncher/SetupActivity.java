@@ -108,6 +108,9 @@ public class SetupActivity extends Activity {
         tip.setPadding(0, dp(6), 0, dp(4));
         card.addView(tip);
 
+        card.addView(label("Fondo de pantalla y estilo"));
+        card.addView(buildWallpaperSelector());
+
         voice = toggle(card, "Saludo por voz al encender el carro", Profile.voiceEnabled(this));
         picoPlaca = toggle(card, "Recordar pico y placa los miércoles (Quito)", Profile.picoPlacaEnabled(this));
         showPhoto();
@@ -145,6 +148,66 @@ public class SetupActivity extends Activity {
     }
 
     // ---------- Helpers ----------
+
+    private View buildWallpaperSelector() {
+        android.widget.HorizontalScrollView hsv = new android.widget.HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        String currentWp = Ui.wallpaper(this);
+
+        for (int i = 0; i < Ui.ALL_WALLPAPERS.length; i++) {
+            final String wpId = Ui.ALL_WALLPAPERS[i];
+            final String wpName = Ui.WALLPAPER_NAMES[i];
+            boolean selected = wpId.equals(currentWp);
+
+            FrameLayout item = new FrameLayout(this);
+            item.setClipToOutline(true);
+
+            if (wpId.equals(Ui.WP_NONE)) {
+                View grad = new View(this);
+                grad.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                        new int[]{0xFF1B2C8C, 0xFF371764}));
+                item.addView(grad, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                int resId = getResources().getIdentifier(wpId, "drawable", getPackageName());
+                if (resId != 0) {
+                    ImageView iv = new ImageView(this);
+                    iv.setImageResource(resId);
+                    iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    item.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+                }
+            }
+
+            View shade = new View(this);
+            shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0x22000000, 0xB3000000}));
+            item.addView(shade, new FrameLayout.LayoutParams(-1, -1));
+
+            TextView lbl = Ui.text(this, wpName, 10, Color.WHITE);
+            lbl.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            lbl.setPadding(dp(4), dp(2), dp(4), dp(4));
+            FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+            item.addView(lbl, llp);
+
+            GradientDrawable border = new GradientDrawable();
+            border.setCornerRadius(dp(12));
+            border.setStroke(dp(selected ? 2 : 1), selected ? 0xFF00E5FF : 0x33FFFFFF);
+            item.setBackground(border);
+
+            Ui.pressable(item, 0.94f);
+            item.setOnClickListener(v -> {
+                Ui.setWallpaper(this, wpId);
+                recreate();
+            });
+
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(105), dp(66));
+            ilp.setMargins(dp(3), dp(4), dp(3), dp(6));
+            row.addView(item, ilp);
+        }
+        hsv.addView(row);
+        return hsv;
+    }
 
     private TextView label(String s) {
         TextView t = Ui.text(this, s, 15, 0xCCFFFFFF);

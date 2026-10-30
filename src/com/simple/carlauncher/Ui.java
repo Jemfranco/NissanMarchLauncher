@@ -34,6 +34,65 @@ final class Ui {
 
     static final String THEME_AUTO = "auto", THEME_LIGHT = "light", THEME_DARK = "dark";
 
+    // Wallpapers
+    static final String WP_NONE = "none";
+    static final String WP_CITY_BRIDGE = "wp_city_bridge";
+    static final String WP_LAKE_MOUNTAINS = "wp_lake_mountains";
+    static final String WP_ALPINE_LAKE = "wp_alpine_lake";
+    static final String WP_FOREST_LAKE = "wp_forest_lake";
+    static final String WP_CITY_NIGHT = "wp_city_night";
+
+    static final String[] ALL_WALLPAPERS = {
+            WP_NONE,
+            WP_CITY_BRIDGE,
+            WP_LAKE_MOUNTAINS,
+            WP_ALPINE_LAKE,
+            WP_FOREST_LAKE,
+            WP_CITY_NIGHT
+    };
+
+    static final String[] WALLPAPER_NAMES = {
+            "Tema Original",
+            "Ciudad y Puente",
+            "Lago y Montañas",
+            "Laguna Alpina",
+            "Bosque Otoñal",
+            "Skyline Nocturno"
+    };
+
+    static String wallpaper(Context c) {
+        return c.getSharedPreferences("ui", Context.MODE_PRIVATE).getString("wallpaper", WP_NONE);
+    }
+
+    static void setWallpaper(Context c, String wp) {
+        c.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putString("wallpaper", wp).apply();
+    }
+
+    static boolean hasWallpaper(Context c) {
+        return !WP_NONE.equals(wallpaper(c));
+    }
+
+    static String nextWallpaper(Context c) {
+        String cur = wallpaper(c);
+        int idx = 0;
+        for (int i = 0; i < ALL_WALLPAPERS.length; i++) {
+            if (ALL_WALLPAPERS[i].equals(cur)) {
+                idx = (i + 1) % ALL_WALLPAPERS.length;
+                break;
+            }
+        }
+        setWallpaper(c, ALL_WALLPAPERS[idx]);
+        return ALL_WALLPAPERS[idx];
+    }
+
+    static String wallpaperLabel(Context c) {
+        String cur = wallpaper(c);
+        for (int i = 0; i < ALL_WALLPAPERS.length; i++) {
+            if (ALL_WALLPAPERS[i].equals(cur)) return WALLPAPER_NAMES[i];
+        }
+        return "Tema Original";
+    }
+
     static String themeMode(Context c) {
         return c.getSharedPreferences("ui", Context.MODE_PRIVATE).getString("theme", THEME_AUTO);
     }
@@ -81,6 +140,16 @@ final class Ui {
     }
 
     static Drawable background(Context c) {
+        if (hasWallpaper(c)) {
+            String wp = wallpaper(c);
+            int resId = c.getResources().getIdentifier(wp, "drawable", c.getPackageName());
+            if (resId != 0) {
+                Drawable img = c.getDrawable(resId);
+                GradientDrawable tint = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{0x40000000, 0x55080A12, 0x6E000000});
+                return new LayerDrawable(new Drawable[]{img, tint});
+            }
+        }
         if (isDark(c)) {
             GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                     new int[]{0xFF0C0C12, 0xFF050507, 0xFF000000});
@@ -107,6 +176,13 @@ final class Ui {
     }
 
     static GradientDrawable card(Context c) {
+        if (hasWallpaper(c)) {
+            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0x59101424, 0x6E0A0D18});
+            bg.setCornerRadius(dp(c, 18));
+            bg.setStroke(dp(c, 1), 0x33FFFFFF);
+            return bg;
+        }
         boolean dark = isDark(c);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 dark ? new int[]{0xFF17171E, 0xFF101015} : new int[]{0x4D5B6CFF, 0x333B3FB8});

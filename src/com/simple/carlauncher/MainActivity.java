@@ -86,7 +86,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private String createdProfile;
 
     private String profileStamp() {
-        return Profile.name(this) + "|" + Profile.carPhotoFile(this).lastModified();
+        return Profile.name(this) + "|" + Profile.carPhotoFile(this).lastModified() + "|" + Ui.wallpaper(this);
     }
     private GradientDrawable oilBg;
     private long lastWeatherFetch;
@@ -140,13 +140,15 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View buildMapCard(boolean compact) {
         FrameLayout card = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                Ui.pick(this, new int[]{0x9924376E, 0x66182046}, new int[]{0xFF14141E, 0xFF0D0D14}));
+                Ui.hasWallpaper(this) ? new int[]{0x59101424, 0x6E0A0D18}
+                : Ui.pick(this, new int[]{0x9924376E, 0x66182046}, new int[]{0xFF14141E, 0xFF0D0D14}));
         bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(1), 0x443FA9FF);
+        bg.setStroke(dp(1), Ui.hasWallpaper(this) ? 0x33FFFFFF : 0x443FA9FF);
         card.setBackground(bg);
         card.setClipToOutline(true);
 
         mapWebView = new WebView(this);
+        mapWebView.setBackgroundColor(0);
         WebSettings ws = mapWebView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
@@ -208,9 +210,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(compact ? 14 : 20), dp(compact ? 10 : 16), dp(compact ? 14 : 20), dp(compact ? 8 : 14));
         weatherBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                Ui.pick(this, new int[]{0x993FA9FF, 0x667B4DFF}, new int[]{0xFF1E1E28, 0xFF121218}));
+                Ui.hasWallpaper(this) ? new int[]{0x59101424, 0x6E0A0D18}
+                : Ui.pick(this, new int[]{0x993FA9FF, 0x667B4DFF}, new int[]{0xFF1E1E28, 0xFF121218}));
         weatherBg.setCornerRadius(dp(18));
-        weatherBg.setStroke(dp(1), 0x447FD8FF);
+        weatherBg.setStroke(dp(1), Ui.hasWallpaper(this) ? 0x33FFFFFF : 0x447FD8FF);
         card.setBackground(weatherBg);
 
         TextView hello = left(Ui.text(this, Profile.hello(this), compact ? 19 : 23, Color.WHITE));
@@ -300,8 +303,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         weatherCity.setText(w.city.isEmpty() ? "Sensación " + w.feelsLike + "°"
                 : w.city + " · Sensación " + w.feelsLike + "°");
         weatherExtra.setText("↑ " + w.max + "°   ↓ " + w.min + "°   💧 " + w.humidity + "%   " + w.wind + " km/h");
-        weatherBg.setColors(Ui.isDark(this) ? new int[]{0xFF1E1E28, 0xFF121218}
-                : w.isDay ? new int[]{0x993FA9FF, 0x667B4DFF} : new int[]{0x8C2A3A9E, 0x80261A6E});
+        if (!Ui.hasWallpaper(this)) {
+            weatherBg.setColors(Ui.isDark(this) ? new int[]{0xFF1E1E28, 0xFF121218}
+                    : w.isDay ? new int[]{0x993FA9FF, 0x667B4DFF} : new int[]{0x8C2A3A9E, 0x80261A6E});
+        }
     }
 
     private void fetchWeather(boolean force) {
@@ -487,9 +492,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View buildMusicCard(boolean compact) {
         FrameLayout card = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                Ui.pick(this, new int[]{0xFF6A3BFF, 0xFFC04DE8, 0xFF2B1A7A},
+                Ui.hasWallpaper(this) ? new int[]{0x591E1035, 0x6E0F071C}
+                : Ui.pick(this, new int[]{0xFF6A3BFF, 0xFFC04DE8, 0xFF2B1A7A},
                         new int[]{0xFF2E1A55, 0xFF1A1030, 0xFF0A0A0E}));
         bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), Ui.hasWallpaper(this) ? 0x33FFFFFF : 0x00000000);
         card.setBackground(bg);
         card.setClipToOutline(true);
 
@@ -588,6 +595,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings,
                 () -> startActivity(new Intent(this, SetupActivity.class)), compact), weight(1f, 0));
+        if (Ui.hasWallpaper(this)) {
+            GradientDrawable dockBg = new GradientDrawable();
+            dockBg.setColor(0x40000000);
+            dockBg.setCornerRadius(dp(compact ? 16 : 22));
+            dockBg.setStroke(dp(1), 0x22FFFFFF);
+            dock.setBackground(dockBg);
+        }
         return dock;
     }
 
