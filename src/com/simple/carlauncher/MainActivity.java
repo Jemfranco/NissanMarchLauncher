@@ -586,11 +586,16 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         dock.addView(dockIcon(R.drawable.ic_w_moon,
                 () -> startActivity(new Intent(this, ScreenOffActivity.class)), compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, compact), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings,
+                () -> startActivity(new Intent(this, SetupActivity.class)), compact), weight(1f, 0));
         return dock;
     }
 
     private View dockIcon(int icon, Runnable action, boolean compact) {
+        return dockIcon(icon, action, null, compact);
+    }
+
+    private View dockIcon(int icon, Runnable action, Runnable longAction, boolean compact) {
         FrameLayout f = new FrameLayout(this);
         ImageView iv = new ImageView(this);
         iv.setImageResource(icon);
@@ -601,6 +606,12 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         f.addView(iv, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
         Ui.pressable(iv, 0.85f);
         iv.setOnClickListener(v -> action.run());
+        if (longAction != null) {
+            iv.setOnLongClickListener(v -> {
+                longAction.run();
+                return true;
+            });
+        }
         return f;
     }
 
