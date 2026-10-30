@@ -56,24 +56,25 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        boolean compact = isCompact();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(14), dp(16), dp(4));
+        root.setPadding(dp(compact ? 10 : 16), dp(compact ? 6 : 14), dp(compact ? 10 : 16), dp(compact ? 2 : 4));
         root.setBackground(Ui.background(this));
 
         LinearLayout cards = new LinearLayout(this);
-        cards.addView(buildWeatherCard(), weight(1.2f, 0));
+        cards.addView(buildWeatherCard(compact), weight(1.2f, 0));
 
         LinearLayout middle = new LinearLayout(this);
         middle.setOrientation(LinearLayout.VERTICAL);
-        middle.addView(buildClockCard(), vweight(0.62f, 0));
-        middle.addView(buildFmCard(), vweight(1.38f, dp(12)));
-        cards.addView(middle, weight(1f, dp(12)));
+        middle.addView(buildClockCard(compact), vweight(compact ? 0.85f : 0.62f, 0));
+        middle.addView(buildFmCard(compact), vweight(compact ? 1.15f : 1.38f, dp(compact ? 8 : 12)));
+        cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
 
-        cards.addView(buildMusicCard(), weight(1.05f, dp(12)));
+        cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
         root.addView(cards, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        root.addView(buildDock(), new LinearLayout.LayoutParams(-1, dp(84)));
+        root.addView(buildDock(compact), new LinearLayout.LayoutParams(-1, dp(compact ? 60 : 84)));
         setContentView(root);
 
         radio.bind(this);
@@ -91,22 +92,22 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- Greeting + weather ----------
 
-    private View buildWeatherCard() {
+    private View buildWeatherCard(boolean compact) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(26), dp(24), dp(26), dp(22));
+        card.setPadding(dp(compact ? 16 : 26), dp(compact ? 12 : 24), dp(compact ? 16 : 26), dp(compact ? 10 : 22));
         weatherBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 Ui.pick(this, new int[]{0x993FA9FF, 0x667B4DFF}, new int[]{0xFF1E1E28, 0xFF121218}));
         weatherBg.setCornerRadius(dp(18));
         weatherBg.setStroke(dp(1), 0x447FD8FF);
         card.setBackground(weatherBg);
 
-        TextView hello = left(Ui.text(this, Profile.hello(this), 34, Color.WHITE));
+        TextView hello = left(Ui.text(this, Profile.hello(this), compact ? 24 : 32, Color.WHITE));
         hello.setTypeface(Typeface.DEFAULT_BOLD);
         card.addView(hello);
 
-        greeting = left(Ui.text(this, "", 17, 0xCCFFFFFF));
-        greeting.setPadding(0, dp(4), 0, 0);
+        greeting = left(Ui.text(this, "", compact ? 13 : 17, 0xCCFFFFFF));
+        greeting.setPadding(0, dp(compact ? 2 : 4), 0, 0);
         card.addView(greeting);
 
         // The user's own car (photo with background removed); headlights glow when the car's lights are on.
@@ -128,14 +129,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
                 hasLightsImage = true;
             }
         } else {
-            car.setImageResource(R.drawable.ic_car);
-            car.setColorFilter(0x40FFFFFF);
+            car.setImageResource(R.drawable.optra);
         }
         carBox.addView(car, new FrameLayout.LayoutParams(-1, -1));
         carBox.addView(carLights, new FrameLayout.LayoutParams(-1, -1));
         carBox.setOnClickListener(v -> startActivity(new Intent(this, SetupActivity.class)));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        clp.setMargins(dp(30), dp(8), dp(30), dp(8));
+        clp.setMargins(dp(compact ? 10 : 30), dp(compact ? 2 : 8), dp(compact ? 10 : 30), dp(compact ? 2 : 8));
         card.addView(carBox, clp);
 
         // Compact weather row: icon + temperature + description, leaving room for the car.
@@ -144,33 +144,33 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         weatherIcon = new ImageView(this);
         weatherIcon.setImageResource(R.drawable.ic_w_cloud);
         weatherIcon.setColorFilter(0xFFFFE07A);
-        now.addView(weatherIcon, new LinearLayout.LayoutParams(dp(54), dp(54)));
-        weatherTemp = left(Ui.text(this, "--°", 50, Color.WHITE));
+        now.addView(weatherIcon, new LinearLayout.LayoutParams(dp(compact ? 36 : 54), dp(compact ? 36 : 54)));
+        weatherTemp = left(Ui.text(this, "--°", compact ? 34 : 50, Color.WHITE));
         weatherTemp.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         weatherTemp.setIncludeFontPadding(false);
-        weatherTemp.setPadding(dp(10), 0, dp(12), 0);
+        weatherTemp.setPadding(dp(compact ? 6 : 10), 0, dp(compact ? 8 : 12), 0);
         now.addView(weatherTemp);
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
-        weatherDesc = left(Ui.text(this, "Cargando el clima…", 16, Color.WHITE));
+        weatherDesc = left(Ui.text(this, "Cargando el clima…", compact ? 13 : 16, Color.WHITE));
         weatherDesc.setSingleLine(false);
         weatherDesc.setMaxLines(2);
         texts.addView(weatherDesc);
-        weatherCity = left(Ui.text(this, "", 13, 0xB3FFFFFF));
-        weatherCity.setPadding(0, dp(2), 0, 0);
+        weatherCity = left(Ui.text(this, "", compact ? 11 : 13, 0xB3FFFFFF));
+        weatherCity.setPadding(0, dp(1), 0, 0);
         texts.addView(weatherCity);
         now.addView(texts, new LinearLayout.LayoutParams(0, -2, 1f));
         card.addView(now);
 
-        weatherExtra = left(Ui.text(this, "", 14, 0xE6FFFFFF));
-        weatherExtra.setPadding(dp(14), dp(8), dp(14), dp(8));
+        weatherExtra = left(Ui.text(this, "", compact ? 11 : 14, 0xE6FFFFFF));
+        weatherExtra.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 8), dp(compact ? 10 : 14), dp(compact ? 4 : 8));
         GradientDrawable chip = new GradientDrawable();
         chip.setColor(0x26FFFFFF);
-        chip.setCornerRadius(dp(20));
+        chip.setCornerRadius(dp(18));
         weatherExtra.setBackground(chip);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.topMargin = dp(10);
+        lp.topMargin = dp(compact ? 4 : 10);
         card.addView(weatherExtra, lp);
 
         Ui.pressable(card, 0.98f);
@@ -252,7 +252,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- Clock ----------
 
-    private View buildClockCard() {
+    private View buildClockCard(boolean compact) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
@@ -261,7 +261,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         TextClock time = new TextClock(this);
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("hh:mm");
-        time.setTextSize(40);
+        time.setTextSize(compact ? 32 : 40);
         time.setTextColor(Color.WHITE);
         time.setTypeface(Typeface.DEFAULT_BOLD);
         time.setIncludeFontPadding(false);
@@ -271,22 +271,22 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         TextClock date = new TextClock(this);
         date.setFormat24Hour("EEEE, d 'de' MMMM");
         date.setFormat12Hour("EEEE, d 'de' MMMM");
-        date.setTextSize(14);
+        date.setTextSize(compact ? 12 : 14);
         date.setTextColor(0xCCFFFFFF);
-        date.setPadding(0, dp(6), 0, 0);
+        date.setPadding(0, dp(compact ? 2 : 6), 0, 0);
         date.setGravity(Gravity.CENTER);
         card.addView(date);
 
         // Oil-change status pill; opens the oil screen.
-        oilInfo = Ui.text(this, "", 13, Color.WHITE);
-        oilInfo.setPadding(dp(14), dp(6), dp(14), dp(6));
+        oilInfo = Ui.text(this, "", compact ? 11 : 13, Color.WHITE);
+        oilInfo.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 6), dp(compact ? 10 : 14), dp(compact ? 4 : 6));
         oilBg = new GradientDrawable();
         oilBg.setCornerRadius(dp(14));
         oilInfo.setBackground(oilBg);
         Ui.pressable(oilInfo, 0.92f);
         oilInfo.setOnClickListener(v -> startActivity(new Intent(this, OilActivity.class)));
         LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-2, -2);
-        olp.topMargin = dp(8);
+        olp.topMargin = dp(compact ? 4 : 8);
         card.addView(oilInfo, olp);
 
         Ui.pressable(card, 0.97f);
@@ -296,7 +296,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- FM ----------
 
-    private View buildFmCard() {
+    private View buildFmCard(boolean compact) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
@@ -364,7 +364,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- Music (any source) ----------
 
-    private View buildMusicCard() {
+    private View buildMusicCard(boolean compact) {
         FrameLayout card = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 Ui.pick(this, new int[]{0xFF6A3BFF, 0xFFC04DE8, 0xFF2B1A7A},
@@ -448,25 +448,40 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- Dock ----------
 
-    private View buildDock() {
+    private View buildDock(boolean compact) {
         LinearLayout dock = new LinearLayout(this);
         dock.setGravity(Gravity.CENTER_VERTICAL);
-        dock.addView(dockIcon(R.drawable.ic_compass, this::openMaps), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_compass, this::openMaps, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio, compact), weight(1f, 0));
 
         FrameLayout center = new FrameLayout(this);
         RingView ring = new RingView(this);
-        center.addView(ring, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
+        int ringSize = dp(compact ? 48 : 64);
+        center.addView(ring, new FrameLayout.LayoutParams(ringSize, ringSize, Gravity.CENTER));
         Ui.pressable(ring, 0.88f);
         ring.setOnClickListener(v -> startActivity(new Intent(this, AppsActivity.class)));
         dock.addView(center, weight(1f, 0));
 
         dock.addView(dockIcon(R.drawable.ic_w_moon,
-                () -> startActivity(new Intent(this, ScreenOffActivity.class))), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings), weight(1f, 0));
+                () -> startActivity(new Intent(this, ScreenOffActivity.class)), compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings, compact), weight(1f, 0));
         return dock;
+    }
+
+    private View dockIcon(int icon, Runnable action, boolean compact) {
+        FrameLayout f = new FrameLayout(this);
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(icon);
+        iv.setColorFilter(0xE6FFFFFF);
+        int pad = dp(compact ? 8 : 12);
+        iv.setPadding(pad, pad, pad, pad);
+        int size = dp(compact ? 44 : 56);
+        f.addView(iv, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
+        Ui.pressable(iv, 0.85f);
+        iv.setOnClickListener(v -> action.run());
+        return f;
     }
 
     // ---------- Shortcuts: NWD screens, or the head unit's own apps elsewhere ----------
@@ -535,17 +550,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show();
     }
 
-    private View dockIcon(int icon, Runnable action) {
-        FrameLayout f = new FrameLayout(this);
-        ImageView iv = new ImageView(this);
-        iv.setImageResource(icon);
-        iv.setColorFilter(0xE6FFFFFF);
-        iv.setPadding(dp(12), dp(12), dp(12), dp(12));
-        f.addView(iv, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER));
-        Ui.pressable(iv, 0.85f);
-        iv.setOnClickListener(v -> action.run());
-        return f;
-    }
+
 
     // ---------- Lifecycle & helpers ----------
 
