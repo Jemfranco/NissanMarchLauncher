@@ -57,9 +57,7 @@ final class Profile {
 
     /** Car pictures bundled only in the owner's personal build (0 when absent). */
     static int bundledCar(Context c, boolean lights) {
-        int id = c.getResources().getIdentifier(lights ? "optra_lights" : "optra", "drawable", c.getPackageName());
-        if (id != 0) return id;
-        return lights ? R.drawable.optra_lights : R.drawable.optra;
+        return c.getResources().getIdentifier(lights ? "optra_lights" : "optra", "drawable", c.getPackageName());
     }
 
     // ---------- Device ----------

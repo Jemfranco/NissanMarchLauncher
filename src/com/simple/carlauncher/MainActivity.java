@@ -129,7 +129,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
                 hasLightsImage = true;
             }
         } else {
-            car.setImageResource(R.drawable.optra);
+            car.setImageResource(R.drawable.ic_car);
+            car.setColorFilter(0x40FFFFFF);
         }
         carBox.addView(car, new FrameLayout.LayoutParams(-1, -1));
         carBox.addView(carLights, new FrameLayout.LayoutParams(-1, -1));
@@ -614,6 +615,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, w);
         lp.topMargin = top;
         return lp;
+    }
+
+        private boolean isCompact() {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        return (dm.heightPixels / dm.density) < 520;
     }
 
     private int dp(int v) {
