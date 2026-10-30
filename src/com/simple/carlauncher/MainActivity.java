@@ -79,6 +79,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private GradientDrawable weatherBg;
     private ImageView car, carLights;
     private boolean hasLightsImage;
+    private boolean lightsOn;
     private TextView oilInfo;
     private boolean createdDark;
     private String createdProfile;
@@ -241,7 +242,14 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
         carBox.addView(car, new FrameLayout.LayoutParams(-1, -1));
         carBox.addView(carLights, new FrameLayout.LayoutParams(-1, -1));
-        carBox.setOnClickListener(v -> startActivity(new Intent(this, SetupActivity.class)));
+        carBox.setOnClickListener(v -> {
+            lightsOn = !lightsOn;
+            showCarLights(lightsOn);
+        });
+        carBox.setOnLongClickListener(v -> {
+            startActivity(new Intent(this, SetupActivity.class));
+            return true;
+        });
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, 0, 1f);
         clp.setMargins(dp(compact ? 6 : 14), dp(compact ? 2 : 4), dp(compact ? 6 : 14), dp(compact ? 2 : 4));
         card.addView(carBox, clp);
@@ -311,22 +319,36 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
     };
 
-    // ---------- Car lights (ILL wire) ----------
+    // ---------- Car lights (ILL wire & Head units) ----------
 
     private final android.content.BroadcastReceiver illReceiver = new android.content.BroadcastReceiver() {
         @Override
         public void onReceive(android.content.Context c, Intent i) {
-            android.util.Log.d("CarLights", "ILL broadcast extras=" + i.getExtras());
-            showCarLights(i.getByteExtra("extra_ill_state", (byte) 0) != 0);
+            String action = i.getAction();
+            android.util.Log.d("CarLights", "ILL broadcast action=" + action + " extras=" + i.getExtras());
+            boolean on = false;
+            if ("com.xyauto.intent.action.ILLUMINATION_ON".equals(action)
+                    || "android.intent.action.HEADLIGHT_ON".equals(action)) {
+                on = true;
+            } else if ("com.xyauto.intent.action.ILLUMINATION_OFF".equals(action)
+                    || "android.intent.action.HEADLIGHT_OFF".equals(action)) {
+                on = false;
+            } else if (i.hasExtra("state")) {
+                on = i.getBooleanExtra("state", false);
+            } else if (i.hasExtra("extra_ill_state")) {
+                on = i.getByteExtra("extra_ill_state", (byte) 0) != 0;
+            } else {
+                on = Ui.areCarLightsOn(c);
+            }
+            lightsOn = on;
+            showCarLights(on);
             // Auto theme follows the car's lights; give the kernel a moment to store the state.
             handler.postDelayed(() -> { if (Ui.isDark(MainActivity.this) != createdDark) recreate(); }, 1500);
         }
     };
 
-    /** The kernel keeps the light state as bit 2 of mcu_no_source_device_state. */
     private boolean carLightsOn() {
-        int state = android.provider.Settings.System.getInt(getContentResolver(), "mcu_no_source_device_state", 0);
-        return (state & 2) != 0;
+        return Ui.areCarLightsOn(this);
     }
 
     private void showCarLights(boolean on) {
@@ -659,11 +681,19 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         updateGreeting();
         updateOil();
         showWeather(Weather.cached(this));
-        registerReceiver(illReceiver, new android.content.IntentFilter("com.nwd.ACTION_ILL_STATE_CHANGE"));
-        boolean lights = hasLightsImage && carLightsOn();
-        android.util.Log.d("CarLights", "onResume lights=" + lights);
-        carLights.setAlpha(lights ? 1f : 0f);
-        car.setAlpha(lights ? 0f : 1f);
+        android.content.IntentFilter illFilter = new android.content.IntentFilter();
+        illFilter.addAction("com.nwd.ACTION_ILL_STATE_CHANGE");
+        illFilter.addAction("com.xyauto.intent.action.ILLUMINATION_ON");
+        illFilter.addAction("com.xyauto.intent.action.ILLUMINATION_OFF");
+        illFilter.addAction("com.microntek.HEADLIGHT_CHANGED");
+        illFilter.addAction("android.intent.action.HEADLIGHT_ON");
+        illFilter.addAction("android.intent.action.HEADLIGHT_OFF");
+        illFilter.addAction("android.intent.action.CONFIGURATION_CHANGED");
+        registerReceiver(illReceiver, illFilter);
+        lightsOn = hasLightsImage && carLightsOn();
+        android.util.Log.d("CarLights", "onResume lights=" + lightsOn);
+        carLights.setAlpha(lightsOn ? 1f : 0f);
+        car.setAlpha(lightsOn ? 0f : 1f);
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             if (locManager == null) locManager = (LocationManager) getSystemService(LOCATION_SERVICE);
             try {

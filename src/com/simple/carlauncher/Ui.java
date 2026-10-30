@@ -42,14 +42,37 @@ final class Ui {
         c.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putString("theme", mode).apply();
     }
 
+    /**
+     * Checks if the vehicle headlights are detected (via MCU system settings,
+     * XY AUTO/YT9216 broadcasts or Android system Night Mode).
+     */
+    static boolean areCarLightsOn(Context c) {
+        try {
+            android.content.ContentResolver cr = c.getContentResolver();
+            // XY AUTO / AC8227L / YT9216
+            if (android.provider.Settings.System.getInt(cr, "headlight_state", 0) != 0) return true;
+            if (android.provider.Settings.System.getInt(cr, "xy_ill_state", 0) != 0) return true;
+            // NWD / Allwinner
+            if ((android.provider.Settings.System.getInt(cr, "mcu_no_source_device_state", 0) & 2) != 0) return true;
+        } catch (Throwable ignored) {}
+        try {
+            // Android UI Night mode (often triggered by car ILL wire on head units)
+            int uiMode = c.getResources().getConfiguration().uiMode;
+            if ((uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     /** Auto = dark while the car's lights are on (ILL wire) or at night. */
     static boolean isDark(Context c) {
         String m = themeMode(c);
         if (THEME_DARK.equals(m)) return true;
         if (THEME_LIGHT.equals(m)) return false;
-        int ill = android.provider.Settings.System.getInt(c.getContentResolver(), "mcu_no_source_device_state", 0);
+        if (areCarLightsOn(c)) return true;
         int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
-        return (ill & 2) != 0 || h >= 19 || h < 6;
+        return h >= 19 || h < 6;
     }
 
     /** Picks the light or dark variant of a gradient. */
