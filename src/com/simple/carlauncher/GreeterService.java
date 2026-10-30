@@ -168,9 +168,8 @@ public class GreeterService extends Service {
         if (!Profile.voiceEnabled(this)) return;
         prefs().edit().putLong("last_greet", System.currentTimeMillis()).apply();
         List<String> clips = buildMessage();
-        // Owner's build ships recorded clips; shared builds speak with the device's TTS engine.
-        if (getResources().getIdentifier("v_careful", "raw", getPackageName()) != 0) speak(clips);
-        else speakTts(Speech.text(this, clips));
+        // Saludo personalizado con Text-To-Speech (TTS) con el nombre de Emmanuel
+        speakTts(Speech.text(this, clips));
     };
 
     private android.speech.tts.TextToSpeech tts;
@@ -179,7 +178,8 @@ public class GreeterService extends Service {
         if (tts != null) tts.shutdown();
         tts = new android.speech.tts.TextToSpeech(this, status -> {
             if (status != android.speech.tts.TextToSpeech.SUCCESS) return;
-            java.util.Locale es = new java.util.Locale("es", "US");
+            java.util.Locale es = new java.util.Locale("es", "CO");
+            if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es", "US");
             if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es");
             tts.setLanguage(es);
             Bundle params = new Bundle();
@@ -210,9 +210,10 @@ public class GreeterService extends Service {
             else if (left <= Odometer.WARN_KM) clips.add("v_oil_soon");
         }
         clips.add("v_seatbelt");
-        if (day == Calendar.WEDNESDAY && Profile.picoPlacaEnabled(this)) {
-            clips.add("v_picoplaca"); // Quito: 6:00-9:30, 16:00-20:00
-        }
+        // Barranquilla no tiene pico y placa para vehículos particulares
+        // if (day == Calendar.WEDNESDAY && Profile.picoPlacaEnabled(this)) {
+        //     clips.add("v_picoplaca");
+        // }
         clips.add("v_careful");
         return clips;
     }
