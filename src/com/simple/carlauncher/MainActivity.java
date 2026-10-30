@@ -1,6 +1,12 @@
 package com.simple.carlauncher;
 
 import android.Manifest;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -31,6 +37,41 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     private final Handler handler = new Handler();
     private final RadioClient radio = new RadioClient();
+    private WebView mapWebView;
+    private LocationManager locManager;
+    private final LocationListener locListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location loc) {
+            if (mapWebView != null && loc != null) {
+                final double lat = loc.getLatitude();
+                final double lng = loc.getLongitude();
+                handler.post(() -> {
+                    mapWebView.evaluateJavascript("if (window.setPos) setPos(" + lat + "," + lng + ");", null);
+                });
+            }
+        }
+        @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+        @Override public void onProviderEnabled(String provider) {}
+        @Override public void onProviderDisabled(String provider) {}
+    };
+
+    private static final String MAP_HTML = "<!DOCTYPE html><html><head>"
+        + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'/>"
+        + "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
+        + "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
+        + "<style>"
+        + "body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #121829; overflow: hidden; }"
+        + ".leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }"
+        + ".pulse { width: 16px; height: 16px; background: #00B0FF; border: 3px solid #FFFFFF; border-radius: 50%; box-shadow: 0 0 14px #00B0FF; }"
+        + "</style></head><body>"
+        + "<div id='map'></div>"
+        + "<script>"
+        + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true}).setView([10.9685, -74.7813], 15);"
+        + "L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);"
+        + "var carIcon = L.divIcon({ className: 'custom-div', html: '<div class=\"pulse\"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });"
+        + "var marker = L.marker([10.9685, -74.7813], {icon: carIcon}).addTo(map);"
+        + "function setPos(lat, lng) { map.setView([lat, lng], 15); marker.setLatLng([lat, lng]); }"
+        + "</script></body></html>";
     private NowPlaying nowPlaying;
 
     private TextView greeting, weatherTemp, weatherDesc, weatherCity, weatherExtra;
@@ -63,12 +104,12 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         root.setBackground(Ui.background(this));
 
         LinearLayout cards = new LinearLayout(this);
-        cards.addView(buildWeatherCard(compact), weight(1.2f, 0));
+        cards.addView(buildMapCard(compact), weight(1.25f, 0));
 
         LinearLayout middle = new LinearLayout(this);
         middle.setOrientation(LinearLayout.VERTICAL);
-        middle.addView(buildClockCard(compact), vweight(compact ? 0.85f : 0.62f, 0));
-        middle.addView(buildFmCard(compact), vweight(compact ? 1.15f : 1.38f, dp(compact ? 8 : 12)));
+        middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
+        middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
         cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
 
         cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
@@ -92,26 +133,92 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     // ---------- Greeting + weather ----------
 
-    private View buildWeatherCard(boolean compact) {
+        // ---------- Left Card: Live Map (Waze) ----------
+
+    private View buildMapCard(boolean compact) {
+        FrameLayout card = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                Ui.pick(this, new int[]{0x9924376E, 0x66182046}, new int[]{0xFF14141E, 0xFF0D0D14}));
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), 0x443FA9FF);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+
+        mapWebView = new WebView(this);
+        WebSettings ws = mapWebView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        mapWebView.setWebViewClient(new WebViewClient());
+        mapWebView.loadDataWithBaseURL("https://basemaps.cartocdn.com", MAP_HTML, "text/html", "UTF-8", null);
+        card.addView(mapWebView, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(compact ? 12 : 16), dp(compact ? 10 : 14), dp(compact ? 12 : 16), 0);
+
+        TextView wazeChip = Ui.text(this, "WAZE · EN VIVO", compact ? 11 : 13, Color.WHITE);
+        wazeChip.setTypeface(Typeface.DEFAULT_BOLD);
+        wazeChip.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 6), dp(compact ? 10 : 14), dp(compact ? 4 : 6));
+        GradientDrawable chipBg = new GradientDrawable();
+        chipBg.setColor(0xCC00B0FF);
+        chipBg.setCornerRadius(dp(14));
+        wazeChip.setBackground(chipBg);
+        topBar.addView(wazeChip);
+
+        FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        card.addView(topBar, tlp);
+
+        TextView bottomPrompt = Ui.text(this, "Toca para abrir Waze ↗", compact ? 11 : 13, 0xEEFFFFFF);
+        bottomPrompt.setPadding(dp(compact ? 12 : 16), dp(compact ? 5 : 7), dp(compact ? 12 : 16), dp(compact ? 5 : 7));
+        GradientDrawable pBg = new GradientDrawable();
+        pBg.setColor(0xCC101018);
+        pBg.setCornerRadius(dp(14));
+        bottomPrompt.setBackground(pBg);
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        blp.bottomMargin = dp(compact ? 8 : 12);
+        card.addView(bottomPrompt, blp);
+
+        View clickOverlay = new View(this);
+        clickOverlay.setClickable(true);
+        Ui.pressable(clickOverlay, 0.98f);
+        clickOverlay.setOnClickListener(v -> openWaze());
+        card.addView(clickOverlay, new FrameLayout.LayoutParams(-1, -1));
+
+        return card;
+    }
+
+    private void openWaze() {
+        Intent i = getPackageManager().getLaunchIntentForPackage("com.waze");
+        if (i == null) {
+            try {
+                i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("waze://?favorite=home"));
+            } catch (Exception e) {
+                i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:10.9685,-74.7813?q=Waze"));
+            }
+        }
+        safeStart(i);
+    }
+
+    // ---------- Center Bottom Card: Nissan March 2015 + Weather ----------
+
+    private View buildCarCard(boolean compact) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(compact ? 16 : 26), dp(compact ? 12 : 24), dp(compact ? 16 : 26), dp(compact ? 10 : 22));
+        card.setPadding(dp(compact ? 14 : 20), dp(compact ? 10 : 16), dp(compact ? 14 : 20), dp(compact ? 8 : 14));
         weatherBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 Ui.pick(this, new int[]{0x993FA9FF, 0x667B4DFF}, new int[]{0xFF1E1E28, 0xFF121218}));
         weatherBg.setCornerRadius(dp(18));
         weatherBg.setStroke(dp(1), 0x447FD8FF);
         card.setBackground(weatherBg);
 
-        TextView hello = left(Ui.text(this, Profile.hello(this), compact ? 24 : 32, Color.WHITE));
+        TextView hello = left(Ui.text(this, Profile.hello(this), compact ? 19 : 23, Color.WHITE));
         hello.setTypeface(Typeface.DEFAULT_BOLD);
         card.addView(hello);
 
-        greeting = left(Ui.text(this, "", compact ? 13 : 17, 0xCCFFFFFF));
-        greeting.setPadding(0, dp(compact ? 2 : 4), 0, 0);
+        greeting = left(Ui.text(this, "", compact ? 12 : 14, 0xCCFFFFFF));
+        greeting.setPadding(0, dp(compact ? 1 : 2), 0, 0);
         card.addView(greeting);
 
-        // The user's own car (photo with background removed); headlights glow when the car's lights are on.
-        // Own photo (shared builds) > bundled car with lights-on variant (owner's build) > icon.
         FrameLayout carBox = new FrameLayout(this);
         car = new ImageView(this);
         car.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -136,43 +243,32 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         carBox.addView(carLights, new FrameLayout.LayoutParams(-1, -1));
         carBox.setOnClickListener(v -> startActivity(new Intent(this, SetupActivity.class)));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        clp.setMargins(dp(compact ? 10 : 30), dp(compact ? 2 : 8), dp(compact ? 10 : 30), dp(compact ? 2 : 8));
+        clp.setMargins(dp(compact ? 6 : 14), dp(compact ? 2 : 4), dp(compact ? 6 : 14), dp(compact ? 2 : 4));
         card.addView(carBox, clp);
 
-        // Compact weather row: icon + temperature + description, leaving room for the car.
         LinearLayout now = new LinearLayout(this);
         now.setGravity(Gravity.CENTER_VERTICAL);
         weatherIcon = new ImageView(this);
         weatherIcon.setImageResource(R.drawable.ic_w_cloud);
         weatherIcon.setColorFilter(0xFFFFE07A);
-        now.addView(weatherIcon, new LinearLayout.LayoutParams(dp(compact ? 36 : 54), dp(compact ? 36 : 54)));
-        weatherTemp = left(Ui.text(this, "--°", compact ? 34 : 50, Color.WHITE));
+        now.addView(weatherIcon, new LinearLayout.LayoutParams(dp(compact ? 26 : 34), dp(compact ? 26 : 34)));
+        weatherTemp = left(Ui.text(this, "--°", compact ? 22 : 28, Color.WHITE));
         weatherTemp.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         weatherTemp.setIncludeFontPadding(false);
-        weatherTemp.setPadding(dp(compact ? 6 : 10), 0, dp(compact ? 8 : 12), 0);
+        weatherTemp.setPadding(dp(compact ? 4 : 6), 0, dp(compact ? 6 : 8), 0);
         now.addView(weatherTemp);
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
-        weatherDesc = left(Ui.text(this, "Cargando el clima…", compact ? 13 : 16, Color.WHITE));
-        weatherDesc.setSingleLine(false);
-        weatherDesc.setMaxLines(2);
+        weatherDesc = left(Ui.text(this, "Cargando clima…", compact ? 11 : 13, Color.WHITE));
+        weatherDesc.setSingleLine(true);
         texts.addView(weatherDesc);
-        weatherCity = left(Ui.text(this, "", compact ? 11 : 13, 0xB3FFFFFF));
-        weatherCity.setPadding(0, dp(1), 0, 0);
+        weatherCity = left(Ui.text(this, "Barranquilla", compact ? 10 : 11, 0xB3FFFFFF));
         texts.addView(weatherCity);
         now.addView(texts, new LinearLayout.LayoutParams(0, -2, 1f));
         card.addView(now);
 
-        weatherExtra = left(Ui.text(this, "", compact ? 11 : 14, 0xE6FFFFFF));
-        weatherExtra.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 8), dp(compact ? 10 : 14), dp(compact ? 4 : 8));
-        GradientDrawable chip = new GradientDrawable();
-        chip.setColor(0x26FFFFFF);
-        chip.setCornerRadius(dp(18));
-        weatherExtra.setBackground(chip);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.topMargin = dp(compact ? 4 : 10);
-        card.addView(weatherExtra, lp);
+        weatherExtra = left(Ui.text(this, "", 1, 0x00000000)); // hidden helper placeholder
 
         Ui.pressable(card, 0.98f);
         card.setOnClickListener(v -> fetchWeather(true));
@@ -514,10 +610,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void openMaps() {
-        Intent maps = getPackageManager().getLaunchIntentForPackage("com.google.android.apps.maps");
-        if (maps == null || !safeStart(maps)) {
-            safeStart(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0?q=")));
-        }
+        openWaze();
     }
 
     /** Opens the first installed app whose name or package matches one of the keywords. */
@@ -571,7 +664,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         android.util.Log.d("CarLights", "onResume lights=" + lights);
         carLights.setAlpha(lights ? 1f : 0f);
         car.setAlpha(lights ? 0f : 1f);
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            if (locManager == null) locManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            try {
+                locManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 10, locListener);
+                locManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 10, locListener);
+            } catch (Exception ignored) {}
+        } else {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
         handler.post(periodic);
@@ -583,6 +682,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (locManager != null) locManager.removeUpdates(locListener);
         unregisterReceiver(illReceiver);
         handler.removeCallbacks(periodic);
         handler.removeCallbacks(radioPoll);
