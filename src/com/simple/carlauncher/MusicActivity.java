@@ -208,9 +208,10 @@ public class MusicActivity extends Activity implements NowPlaying.Listener {
         timeBox.addView(timesRow);
 
         timeBar = new SeekBar(this);
-        timeBar.setPadding(dp(6), dp(8), dp(6), dp(8));
+        timeBar.setPadding(dp(12), dp(10), dp(12), dp(10));
         timeBar.setProgressDrawable(createSeekBarProgress());
         timeBar.setThumb(createSeekBarThumb());
+        timeBar.setThumbOffset(dp(13));
         timeBar.setSplitTrack(false);
 
         timeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -229,7 +230,9 @@ public class MusicActivity extends Activity implements NowPlaying.Listener {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 isTrackingSeekBar = false;
-                nowPlaying.seekTo(seekBar.getProgress());
+                int pos = seekBar.getProgress();
+                curTimeText.setText(formatTime(pos));
+                nowPlaying.seekTo(pos);
             }
         });
         timeBox.addView(timeBar);
@@ -287,20 +290,25 @@ public class MusicActivity extends Activity implements NowPlaying.Listener {
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0x33FFFFFF);
         bg.setCornerRadius(dp(4));
+        bg.setSize(-1, dp(6));
 
         GradientDrawable progress = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{0xFF00E5FF, 0xFF7C4DFF});
         progress.setCornerRadius(dp(4));
+        progress.setSize(-1, dp(6));
         ClipDrawable clip = new ClipDrawable(progress, Gravity.LEFT, ClipDrawable.HORIZONTAL);
 
-        return new LayerDrawable(new Drawable[]{bg, clip});
+        LayerDrawable ld = new LayerDrawable(new Drawable[]{bg, clip});
+        ld.setId(0, android.R.id.background);
+        ld.setId(1, android.R.id.progress);
+        return ld;
     }
 
     private Drawable createSeekBarThumb() {
         GradientDrawable thumb = new GradientDrawable();
         thumb.setShape(GradientDrawable.OVAL);
-        thumb.setSize(dp(22), dp(22));
+        thumb.setSize(dp(26), dp(26));
         thumb.setColor(Color.WHITE);
         thumb.setStroke(dp(3), 0xFF00E5FF);
         return thumb;
@@ -310,26 +318,28 @@ public class MusicActivity extends Activity implements NowPlaying.Listener {
         nowPlaying.toggleShuffle();
         updateShuffleState();
         int mode = nowPlaying.getShuffleMode();
-        toast(mode != 0 ? "Aleatorio: Activado" : "Aleatorio: Desactivado");
+        toast(mode != 0 ? "🔀 Aleatorio: Activado" : "🔀 Aleatorio: Desactivado");
     }
 
     private void onRepeatClicked() {
         nowPlaying.toggleRepeat();
         updateRepeatState();
         int mode = nowPlaying.getRepeatMode();
-        toast(mode == 1 ? "Repetir: 1 Canción" : mode == 2 ? "Repetir: Todo" : "Repetir: Desactivado");
+        toast(mode == 1 ? "🔂 Repetir: 1 Canción" : mode == 2 ? "🔁 Repetir: Todo" : "🔁 Repetir: Desactivado");
     }
 
     private void onRewindClicked() {
         nowPlaying.rewind10();
         toast("⏪ -10 segundos");
-        updateProgress();
+        curTimeText.setText(formatTime(nowPlaying.getPosition()));
+        timeBar.setProgress((int) nowPlaying.getPosition());
     }
 
     private void onForwardClicked() {
         nowPlaying.fastForward10();
         toast("⏩ +10 segundos");
-        updateProgress();
+        curTimeText.setText(formatTime(nowPlaying.getPosition()));
+        timeBar.setProgress((int) nowPlaying.getPosition());
     }
 
     private void updateShuffleState() {

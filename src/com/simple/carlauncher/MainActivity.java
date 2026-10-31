@@ -61,6 +61,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private final Handler handler = new Handler();
     private final RadioClient radio = new RadioClient();
     private WebView mapWebView;
+    private WaveVisualizerView musicCardVisualizer;
     private LocationManager locManager;
     private final LocationListener locListener = new LocationListener() {
         @Override
@@ -933,13 +934,17 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         card.setBackground(bg);
         card.setClipToOutline(true);
 
+        // Visualizador animado de ondas de fondo en la tarjeta principal
+        musicCardVisualizer = new WaveVisualizerView(this);
+        card.addView(musicCardVisualizer, new FrameLayout.LayoutParams(-1, -1));
+
         art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(art, new FrameLayout.LayoutParams(-1, -1));
 
         View shade = new View(this);
         shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x33000000, 0x00000000, 0xCC100A30}));
+                new int[]{0x44000000, 0x11000000, 0xDD100A30}));
         card.addView(shade, new FrameLayout.LayoutParams(-1, -1));
 
         songSource = Ui.text(this, "MÚSICA", 12, Color.WHITE);
@@ -992,6 +997,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         boolean hasNotifAccess = NowPlaying.isNotificationListenerEnabled(this);
         boolean empty = t == null || t.title.isEmpty();
 
+        if (musicCardVisualizer != null) {
+            musicCardVisualizer.setPlaying(t != null && t.playing);
+        }
+
         if (!hasNotifAccess && empty) {
             songSource.setText("PERMISO REQUERIDO");
             songTitle.setText("Música desactivada");
@@ -1008,14 +1017,14 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             art.setPadding(0, 0, 0, 0);
             art.setScaleType(ImageView.ScaleType.CENTER_CROP);
             art.clearColorFilter();
-            art.setAlpha(1f);
+            art.setAlpha(0.40f);
             art.setImageBitmap(t.art);
         } else {
             art.setPadding(dp(80), dp(56), dp(80), dp(170));
             art.setScaleType(ImageView.ScaleType.FIT_CENTER);
             art.setImageResource(s == NowPlaying.Source.BT ? R.drawable.ic_bluetooth : R.drawable.ic_music);
             art.setColorFilter(Color.WHITE);
-            art.setAlpha(0.25f);
+            art.setAlpha(0.20f);
         }
     }
 
@@ -1268,11 +1277,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         nowPlaying.refreshSessions();
         nowPlaying.addListener(this);
         onNowPlayingChanged();
+        if (musicCardVisualizer != null) musicCardVisualizer.startAnimation();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        if (musicCardVisualizer != null) musicCardVisualizer.stopAnimation();
         if (locManager != null) locManager.removeUpdates(locListener);
         unregisterReceiver(illReceiver);
         handler.removeCallbacks(lightPoll);
