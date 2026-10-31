@@ -247,8 +247,36 @@ final class NowPlaying {
         public void onSessionDestroyed() { refreshSessions(); }
     };
 
+    void pollBluetoothSettings() {
+        try {
+            android.content.ContentResolver cr = ctx.getContentResolver();
+            String[] titleKeys = {"bt_music_title", "bt_title", "xy_bt_title", "bluetooth_title", "bt_music_name", "id3_title", "avrcp_title"};
+            String[] artistKeys = {"bt_music_artist", "bt_artist", "xy_bt_artist", "bluetooth_artist", "id3_artist", "avrcp_artist"};
+            boolean changed = false;
+            for (String k : titleKeys) {
+                String val = Settings.System.getString(cr, k);
+                if (val != null && !val.trim().isEmpty() && !val.equals(bt.title)) {
+                    bt.title = val.trim();
+                    bt.updated = SystemClock.elapsedRealtime();
+                    changed = true;
+                    break;
+                }
+            }
+            for (String k : artistKeys) {
+                String val = Settings.System.getString(cr, k);
+                if (val != null && !val.trim().isEmpty() && !val.equals(bt.artist)) {
+                    bt.artist = val.trim();
+                    changed = true;
+                    break;
+                }
+            }
+            if (changed) notifyListeners();
+        } catch (Throwable ignored) {}
+    }
+
     void refreshSessions() {
         ensureSessionListenerRegistered();
+        pollBluetoothSettings();
         List<MediaController> list = null;
         try {
             list = sessions.getActiveSessions(notificationListener);
