@@ -14,6 +14,7 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.os.Build;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -423,6 +424,124 @@ final class NowPlaying {
         } else {
             mediaKey(next ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS);
         }
+    }
+
+    private int repeatMode = 0; // 0 = NONE, 2 = ALL, 1 = ONE
+    private int shuffleMode = 0; // 0 = OFF, 1 = ON
+
+    long getPosition() {
+        if (controller != null) {
+            try {
+                PlaybackState s = controller.getPlaybackState();
+                if (s != null) {
+                    long pos = s.getPosition();
+                    if (s.getState() == PlaybackState.STATE_PLAYING) {
+                        long diff = SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime();
+                        if (diff > 0) {
+                            pos += (long) (diff * s.getPlaybackSpeed());
+                        }
+                    }
+                    return Math.max(0, pos);
+                }
+            } catch (Throwable ignored) {}
+        }
+        if (bt.playing && bt.updated > 0) {
+            return Math.max(0, SystemClock.elapsedRealtime() - bt.updated);
+        }
+        return 0;
+    }
+
+    long getDuration() {
+        if (controller != null) {
+            try {
+                MediaMetadata m = controller.getMetadata();
+                if (m != null) {
+                    long dur = m.getLong(MediaMetadata.METADATA_KEY_DURATION);
+                    if (dur > 0) return dur;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return 0;
+    }
+
+    void seekTo(long posMs) {
+        if (controller != null && controller.getTransportControls() != null) {
+            try {
+                controller.getTransportControls().seekTo(posMs);
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    void rewind10() {
+        long cur = getPosition();
+        long dur = getDuration();
+        if (controller != null && dur > 0) {
+            seekTo(Math.max(0, cur - 10000));
+        } else {
+            mediaKey(KeyEvent.KEYCODE_MEDIA_REWIND);
+        }
+    }
+
+    void fastForward10() {
+        long cur = getPosition();
+        long dur = getDuration();
+        if (controller != null && dur > 0) {
+            seekTo(Math.min(dur, cur + 10000));
+        } else {
+            mediaKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD);
+        }
+    }
+
+    int getRepeatMode() {
+        if (controller != null) {
+            try {
+                java.lang.reflect.Method m = controller.getClass().getMethod("getRepeatMode");
+                Object res = m.invoke(controller);
+                if (res instanceof Integer) return (Integer) res;
+            } catch (Throwable ignored) {}
+        }
+        return repeatMode;
+    }
+
+    void toggleRepeat() {
+        int cur = getRepeatMode();
+        int next = (cur == 0) ? 2 : (cur == 2) ? 1 : 0;
+        repeatMode = next;
+        if (controller != null && controller.getTransportControls() != null) {
+            try {
+                java.lang.reflect.Method m = controller.getTransportControls().getClass().getMethod("setRepeatMode", int.class);
+                m.invoke(controller.getTransportControls(), next);
+            } catch (Throwable ignored) {}
+        }
+        notifyListeners();
+    }
+
+    int getShuffleMode() {
+        if (controller != null) {
+            try {
+                java.lang.reflect.Method m = controller.getClass().getMethod("getShuffleMode");
+                Object res = m.invoke(controller);
+                if (res instanceof Integer) return (Integer) res;
+            } catch (Throwable ignored) {}
+        }
+        return shuffleMode;
+    }
+
+    void toggleShuffle() {
+        int cur = getShuffleMode();
+        int next = (cur == 0) ? 1 : 0;
+        shuffleMode = next;
+        if (controller != null && controller.getTransportControls() != null) {
+            try {
+                java.lang.reflect.Method m = controller.getTransportControls().getClass().getMethod("setShuffleMode", int.class);
+                m.invoke(controller.getTransportControls(), next);
+            } catch (Throwable ignored) {}
+        }
+        notifyListeners();
+    }
+
+    MediaController getController() {
+        return controller;
     }
 
     /** Opens the screen that belongs to the current source. */

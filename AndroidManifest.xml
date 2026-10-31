@@ -47,6 +47,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden|locale" />
 
         <activity
+            android:name=".MusicActivity"
+            android:label="Música"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden|locale" />
+
+        <activity
             android:name=".ScreenOffActivity"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"

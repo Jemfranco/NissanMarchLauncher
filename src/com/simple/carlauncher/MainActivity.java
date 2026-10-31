@@ -63,18 +63,23 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         + "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
         + "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
         + "<style>"
-        + "body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f1422; overflow: hidden; }"
+        + "body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0c101d; overflow: hidden; }"
         + ".leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }"
-        + ".leaflet-tile { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); -webkit-filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }"
-        + ".pulse { width: 16px; height: 16px; background: #00B0FF; border: 3px solid #FFFFFF; border-radius: 50%; box-shadow: 0 0 14px #00B0FF; }"
+        + ".leaflet-tile { filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(135%) saturate(140%); -webkit-filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(135%) saturate(140%); }"
+        + ".nav-box { position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }"
+        + ".nav-pulse { position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 229, 255, 0.25); box-shadow: 0 0 14px #00E5FF; animation: ring-pulse 1.8s infinite ease-out; }"
+        + ".nav-arrow { width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 20px solid #00E5FF; filter: drop-shadow(0 0 8px #00E5FF); z-index: 5; }"
+        + "@keyframes ring-pulse { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }"
         + "</style></head><body>"
         + "<div id='map'></div>"
         + "<script>"
-        + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true}).setView([10.9685, -74.7813], 15);"
+        + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true}).setView([10.9685, -74.7813], 17.5);"
         + "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);"
-        + "var carIcon = L.divIcon({ className: 'custom-div', html: '<div class=\"pulse\"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });"
+        + "var carIcon = L.divIcon({ className: 'custom-div', html: '<div class=\"nav-box\"><div class=\"nav-pulse\"></div><div class=\"nav-arrow\"></div></div>', iconSize: [36, 36], iconAnchor: [18, 18] });"
         + "var marker = L.marker([10.9685, -74.7813], {icon: carIcon}).addTo(map);"
-        + "function setPos(lat, lng) { map.setView([lat, lng], 15); marker.setLatLng([lat, lng]); }"
+        + "function setPos(lat, lng) { var z = map.getZoom(); map.setView([lat, lng], z > 0 ? z : 17.5); marker.setLatLng([lat, lng]); }"
+        + "function zoomIn() { map.zoomIn(); }"
+        + "function zoomOut() { map.zoomOut(); }"
         + "</script></body></html>";
     private NowPlaying nowPlaying;
 
@@ -190,6 +195,45 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         Ui.pressable(clickOverlay, 0.98f);
         clickOverlay.setOnClickListener(v -> openWaze());
         card.addView(clickOverlay, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout zoomControls = new LinearLayout(this);
+        zoomControls.setOrientation(LinearLayout.VERTICAL);
+        zoomControls.setGravity(Gravity.CENTER);
+
+        TextView zoomIn = Ui.text(this, "+", compact ? 18 : 22, Color.WHITE);
+        zoomIn.setTypeface(Typeface.DEFAULT_BOLD);
+        int zSize = dp(compact ? 32 : 38);
+        zoomIn.setGravity(Gravity.CENTER);
+        GradientDrawable zBgIn = new GradientDrawable();
+        zBgIn.setColor(0xCC1A2035);
+        zBgIn.setCornerRadius(dp(8));
+        zBgIn.setStroke(dp(1), 0x33FFFFFF);
+        zoomIn.setBackground(zBgIn);
+        Ui.pressable(zoomIn, 0.88f);
+        zoomIn.setOnClickListener(v -> {
+            if (mapWebView != null) mapWebView.evaluateJavascript("zoomIn();", null);
+        });
+        zoomControls.addView(zoomIn, new LinearLayout.LayoutParams(zSize, zSize));
+
+        TextView zoomOut = Ui.text(this, "−", compact ? 18 : 22, Color.WHITE);
+        zoomOut.setTypeface(Typeface.DEFAULT_BOLD);
+        zoomOut.setGravity(Gravity.CENTER);
+        GradientDrawable zBgOut = new GradientDrawable();
+        zBgOut.setColor(0xCC1A2035);
+        zBgOut.setCornerRadius(dp(8));
+        zBgOut.setStroke(dp(1), 0x33FFFFFF);
+        zoomOut.setBackground(zBgOut);
+        Ui.pressable(zoomOut, 0.88f);
+        zoomOut.setOnClickListener(v -> {
+            if (mapWebView != null) mapWebView.evaluateJavascript("zoomOut();", null);
+        });
+        LinearLayout.LayoutParams zolp = new LinearLayout.LayoutParams(zSize, zSize);
+        zolp.topMargin = dp(compact ? 4 : 6);
+        zoomControls.addView(zoomOut, zolp);
+
+        FrameLayout.LayoutParams zlp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
+        zlp.setMargins(0, 0, dp(compact ? 10 : 14), dp(compact ? 10 : 14));
+        card.addView(zoomControls, zlp);
 
         return card;
     }
@@ -562,7 +606,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         card.addView(bottom, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
 
         Ui.pressable(card, 0.98f);
-        card.setOnClickListener(v -> nowPlaying.open(this));
+        card.setOnClickListener(v -> startActivity(new Intent(this, MusicActivity.class)));
+        card.setOnLongClickListener(v -> {
+            nowPlaying.open(this);
+            return true;
+        });
         return card;
     }
 
