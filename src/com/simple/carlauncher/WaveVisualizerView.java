@@ -220,3 +220,4 @@ public class WaveVisualizerView extends View {
         }
     }
 }
+

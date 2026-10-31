@@ -9,25 +9,45 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.app.Activity;
 import android.app.AlertDialog;
-import java.util.ArrayList;
-import java.util.List;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 
 public class MainActivity extends Activity implements NowPlaying.Listener {
 
@@ -58,29 +78,90 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         @Override public void onProviderDisabled(String provider) {}
     };
 
-    private static final String MAP_HTML = "<!DOCTYPE html><html><head>"
-        + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'/>"
-        + "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
-        + "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
-        + "<style>"
-        + "body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0c101d; overflow: hidden; }"
-        + ".leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }"
-        + ".leaflet-tile { filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(135%) saturate(140%); -webkit-filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(135%) saturate(140%); }"
-        + ".nav-box { position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }"
-        + ".nav-pulse { position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 229, 255, 0.25); box-shadow: 0 0 14px #00E5FF; animation: ring-pulse 1.8s infinite ease-out; }"
-        + ".nav-arrow { width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 20px solid #00E5FF; filter: drop-shadow(0 0 8px #00E5FF); z-index: 5; }"
-        + "@keyframes ring-pulse { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }"
-        + "</style></head><body>"
-        + "<div id='map'></div>"
-        + "<script>"
-        + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true}).setView([10.9685, -74.7813], 17.5);"
-        + "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);"
-        + "var carIcon = L.divIcon({ className: 'custom-div', html: '<div class=\"nav-box\"><div class=\"nav-pulse\"></div><div class=\"nav-arrow\"></div></div>', iconSize: [36, 36], iconAnchor: [18, 18] });"
-        + "var marker = L.marker([10.9685, -74.7813], {icon: carIcon}).addTo(map);"
-        + "function setPos(lat, lng) { var z = map.getZoom(); map.setView([lat, lng], z > 0 ? z : 17.5); marker.setLatLng([lat, lng]); }"
-        + "function zoomIn() { map.zoomIn(); }"
-        + "function zoomOut() { map.zoomOut(); }"
-        + "</script></body></html>";
+    private static String cachedMapHtml = null;
+
+    private String readRawString(int resId) {
+        try (InputStream is = getResources().openRawResource(resId);
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = is.read(buf)) != -1) {
+                baos.write(buf, 0, len);
+            }
+            return baos.toString("UTF-8");
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private String getMapHtml() {
+        if (cachedMapHtml != null) return cachedMapHtml;
+        String css = readRawString(R.raw.leaflet_css);
+        String js = readRawString(R.raw.leaflet_js);
+
+        cachedMapHtml = "<!DOCTYPE html><html><head>"
+            + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'/>"
+            + "<style>"
+            + css
+            + "html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #e5e3df; overflow: hidden; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }"
+            + ".leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }"
+            + ".leaflet-container { background: #e5e3df; }"
+            + ".nav-box { position: relative; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; pointer-events: none; }"
+            + ".nav-pulse { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(0, 140, 255, 0.35); box-shadow: 0 0 16px rgba(0, 140, 255, 0.7); animation: ring-pulse 1.8s infinite ease-out; }"
+            + ".nav-arrow { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 22px solid #0066FF; filter: drop-shadow(0 0 6px rgba(0, 80, 220, 0.9)); z-index: 5; }"
+            + ".dest-pin { position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 26px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45)); animation: bounce 1s infinite alternate; cursor: pointer; }"
+            + "@keyframes bounce { 0% { transform: translateY(0); } 100% { transform: translateY(-7px); } }"
+            + "@keyframes ring-pulse { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }"
+            + "</style>"
+            + "<script>"
+            + js
+            + "</script>"
+            + "</head><body>"
+            + "<div id='map'></div>"
+            + "<script>"
+            + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true, touchZoom: true, tap: false, doubleClickZoom: true, bounceAtZoomLimits: false}).setView([10.9685, -74.7813], 17);"
+            + "L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {subdomains: ['0', '1', '2', '3'], maxZoom: 20}).addTo(map);"
+            + "var carIcon = L.divIcon({ className: 'custom-car', html: '<div class=\"nav-box\"><div class=\"nav-pulse\"></div><div class=\"nav-arrow\"></div></div>', iconSize: [38, 38], iconAnchor: [19, 19] });"
+            + "var marker = L.marker([10.9685, -74.7813], {icon: carIcon}).addTo(map);"
+            + "var destMarker = null;"
+            + "function setPos(lat, lng) { var z = map.getZoom(); map.setView([lat, lng], z > 0 ? z : 17); marker.setLatLng([lat, lng]); }"
+            + "function showDestination(lat, lng, label) {"
+            + "  if (destMarker) { map.removeLayer(destMarker); }"
+            + "  var destIcon = L.divIcon({ className: 'custom-dest', html: '<div class=\"dest-pin\">📍</div>', iconSize: [36, 36], iconAnchor: [18, 34] });"
+            + "  destMarker = L.marker([lat, lng], {icon: destIcon}).addTo(map);"
+            + "  destMarker.bindPopup('<div style=\"text-align:center; padding:4px;\"><b>' + label + '</b><br><br><span style=\"color:#0088cc; font-size:12px;\">Toca para navegar en Waze</span></div>').openPopup();"
+            + "  map.flyTo([lat, lng], 17);"
+            + "}"
+            + "function zoomIn() { map.zoomIn(); }"
+            + "function zoomOut() { map.zoomOut(); }"
+            + "var touchStartTime = 0; var touchStartX = 0; var touchStartY = 0; var hasMoved = false;"
+            + "var mapDiv = document.getElementById('map');"
+            + "mapDiv.addEventListener('touchstart', function(e) {"
+            + "  touchStartTime = Date.now();"
+            + "  hasMoved = false;"
+            + "  if (e.touches.length === 1) {"
+            + "    touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;"
+            + "  } else {"
+            + "    hasMoved = true;"
+            + "  }"
+            + "}, {passive: true});"
+            + "mapDiv.addEventListener('touchmove', function(e) {"
+            + "  if (e.touches.length > 1) { hasMoved = true; }"
+            + "  else if (e.touches.length === 1) {"
+            + "    var dx = Math.abs(e.touches[0].clientX - touchStartX);"
+            + "    var dy = Math.abs(e.touches[0].clientY - touchStartY);"
+            + "    if (dx > 8 || dy > 8) { hasMoved = true; }"
+            + "  }"
+            + "}, {passive: true});"
+            + "map.on('click', function(e) {"
+            + "  var dt = Date.now() - touchStartTime;"
+            + "  if (!hasMoved && dt < 450) {"
+            + "    if (window.AndroidMap) { window.AndroidMap.onMapClicked(); }"
+            + "  }"
+            + "});"
+            + "</script></body></html>";
+        return cachedMapHtml;
+    }
     private NowPlaying nowPlaying;
 
     private TextView greeting, weatherTemp, weatherDesc, weatherCity, weatherExtra;
@@ -160,54 +241,95 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         WebSettings ws = mapWebView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setCacheMode(WebSettings.LOAD_DEFAULT);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
+        ws.setSupportZoom(false);
+        ws.setBuiltInZoomControls(false);
+        ws.setDisplayZoomControls(false);
+
+        mapWebView.addJavascriptInterface(new Object() {
+            @android.webkit.JavascriptInterface
+            public void onMapClicked() {
+                handler.post(() -> openWaze());
+            }
+            @android.webkit.JavascriptInterface
+            public void openWazeWithQuery(String q) {
+                handler.post(() -> MainActivity.this.openWazeWithQuery(q));
+            }
+        }, "AndroidMap");
+
+        mapWebView.setOnTouchListener((v, event) -> {
+            v.getParent().requestDisallowInterceptTouchEvent(true);
+            return false;
+        });
+
         mapWebView.setWebViewClient(new WebViewClient());
-        mapWebView.loadDataWithBaseURL("https://basemaps.cartocdn.com", MAP_HTML, "text/html", "UTF-8", null);
+        mapWebView.loadDataWithBaseURL("https://maps.google.com", getMapHtml(), "text/html", "UTF-8", null);
         card.addView(mapWebView, new FrameLayout.LayoutParams(-1, -1));
 
+        // Barra superior con Waze Chip y Botón Lupa de Búsqueda
         LinearLayout topBar = new LinearLayout(this);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(compact ? 12 : 16), dp(compact ? 10 : 14), dp(compact ? 12 : 16), 0);
+        topBar.setPadding(dp(compact ? 10 : 14), dp(compact ? 8 : 12), dp(compact ? 10 : 14), 0);
 
-        TextView wazeChip = Ui.text(this, "WAZE · EN VIVO", compact ? 11 : 13, Color.WHITE);
+        TextView wazeChip = Ui.text(this, "🚗 WAZE", compact ? 11 : 12, Color.WHITE);
         wazeChip.setTypeface(Typeface.DEFAULT_BOLD);
-        wazeChip.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 6), dp(compact ? 10 : 14), dp(compact ? 4 : 6));
+        wazeChip.setPadding(dp(compact ? 10 : 14), dp(compact ? 5 : 7), dp(compact ? 10 : 14), dp(compact ? 5 : 7));
         GradientDrawable chipBg = new GradientDrawable();
-        chipBg.setColor(0xCC00B0FF);
+        chipBg.setColor(0xEE00B0FF);
         chipBg.setCornerRadius(dp(14));
         wazeChip.setBackground(chipBg);
+        Ui.pressable(wazeChip, 0.90f);
+        wazeChip.setOnClickListener(v -> openWaze());
         topBar.addView(wazeChip);
+
+        View spacer = new View(this);
+        topBar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+
+        TextView searchBtn = Ui.text(this, "🔍 Buscar", compact ? 11 : 12, Color.WHITE);
+        searchBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        searchBtn.setPadding(dp(compact ? 10 : 14), dp(compact ? 5 : 7), dp(compact ? 10 : 14), dp(compact ? 5 : 7));
+        GradientDrawable sBg = new GradientDrawable();
+        sBg.setColor(0xEE111827);
+        sBg.setCornerRadius(dp(14));
+        sBg.setStroke(dp(1), 0x8800E5FF);
+        searchBtn.setBackground(sBg);
+        Ui.pressable(searchBtn, 0.90f);
+        searchBtn.setOnClickListener(v -> showSearchDialog());
+        topBar.addView(searchBtn);
 
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
         card.addView(topBar, tlp);
 
-        TextView bottomPrompt = Ui.text(this, "Toca para abrir Waze ↗", compact ? 11 : 13, 0xEEFFFFFF);
-        bottomPrompt.setPadding(dp(compact ? 12 : 16), dp(compact ? 5 : 7), dp(compact ? 12 : 16), dp(compact ? 5 : 7));
+        TextView bottomPrompt = Ui.text(this, "Toca el mapa para abrir Waze ↗", compact ? 10 : 12, 0xEEFFFFFF);
+        bottomPrompt.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 6), dp(compact ? 10 : 14), dp(compact ? 4 : 6));
         GradientDrawable pBg = new GradientDrawable();
-        pBg.setColor(0xCC101018);
-        pBg.setCornerRadius(dp(14));
+        pBg.setColor(0xCC101422);
+        pBg.setCornerRadius(dp(12));
+        pBg.setStroke(dp(1), 0x33FFFFFF);
         bottomPrompt.setBackground(pBg);
+        Ui.pressable(bottomPrompt, 0.90f);
+        bottomPrompt.setOnClickListener(v -> openWaze());
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         blp.bottomMargin = dp(compact ? 8 : 12);
         card.addView(bottomPrompt, blp);
-
-        View clickOverlay = new View(this);
-        clickOverlay.setClickable(true);
-        Ui.pressable(clickOverlay, 0.98f);
-        clickOverlay.setOnClickListener(v -> openWaze());
-        card.addView(clickOverlay, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout zoomControls = new LinearLayout(this);
         zoomControls.setOrientation(LinearLayout.VERTICAL);
         zoomControls.setGravity(Gravity.CENTER);
 
-        TextView zoomIn = Ui.text(this, "+", compact ? 18 : 22, Color.WHITE);
+        int zSize = dp(compact ? 30 : 36);
+
+        TextView zoomIn = Ui.text(this, "+", compact ? 18 : 20, Color.WHITE);
         zoomIn.setTypeface(Typeface.DEFAULT_BOLD);
-        int zSize = dp(compact ? 32 : 38);
         zoomIn.setGravity(Gravity.CENTER);
         GradientDrawable zBgIn = new GradientDrawable();
-        zBgIn.setColor(0xCC1A2035);
+        zBgIn.setColor(0xCC111827);
         zBgIn.setCornerRadius(dp(8));
-        zBgIn.setStroke(dp(1), 0x33FFFFFF);
+        zBgIn.setStroke(dp(1), 0x4400E5FF);
         zoomIn.setBackground(zBgIn);
         Ui.pressable(zoomIn, 0.88f);
         zoomIn.setOnClickListener(v -> {
@@ -215,13 +337,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         });
         zoomControls.addView(zoomIn, new LinearLayout.LayoutParams(zSize, zSize));
 
-        TextView zoomOut = Ui.text(this, "−", compact ? 18 : 22, Color.WHITE);
+        TextView zoomOut = Ui.text(this, "−", compact ? 18 : 20, Color.WHITE);
         zoomOut.setTypeface(Typeface.DEFAULT_BOLD);
         zoomOut.setGravity(Gravity.CENTER);
         GradientDrawable zBgOut = new GradientDrawable();
-        zBgOut.setColor(0xCC1A2035);
+        zBgOut.setColor(0xCC111827);
         zBgOut.setCornerRadius(dp(8));
-        zBgOut.setStroke(dp(1), 0x33FFFFFF);
+        zBgOut.setStroke(dp(1), 0x4400E5FF);
         zoomOut.setBackground(zBgOut);
         Ui.pressable(zoomOut, 0.88f);
         zoomOut.setOnClickListener(v -> {
@@ -232,10 +354,238 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         zoomControls.addView(zoomOut, zolp);
 
         FrameLayout.LayoutParams zlp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
-        zlp.setMargins(0, 0, dp(compact ? 10 : 14), dp(compact ? 10 : 14));
+        zlp.setMargins(0, 0, dp(compact ? 8 : 12), dp(compact ? 8 : 12));
         card.addView(zoomControls, zlp);
 
         return card;
+    }
+
+    private void showSearchDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        LinearLayout dialogView = new LinearLayout(this);
+        dialogView.setOrientation(LinearLayout.VERTICAL);
+        dialogView.setPadding(dp(20), dp(18), dp(20), dp(18));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF00D1220);
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), 0x6600E5FF);
+        dialogView.setBackground(bg);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView icon = Ui.text(this, "🔍", 20, Color.WHITE);
+        titleRow.addView(icon);
+        TextView title = Ui.text(this, " Buscar Destino", 18, Color.WHITE);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        titleRow.addView(title);
+        dialogView.addView(titleRow);
+
+        TextView sub = Ui.text(this, "Escribe una dirección o lugar para ver en Google Maps o navegar en Waze:", 12, 0xAAFFFFFF);
+        sub.setPadding(0, dp(4), 0, dp(12));
+        dialogView.addView(sub);
+
+        final EditText input = new EditText(this);
+        input.setHint("Ej: Viva Barranquilla, C.C. Buenavista, Cra 53 # 80...");
+        input.setHintTextColor(0x66FFFFFF);
+        input.setTextColor(Color.WHITE);
+        input.setTextSize(15);
+        input.setSingleLine(true);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        GradientDrawable inBg = new GradientDrawable();
+        inBg.setColor(0x33FFFFFF);
+        inBg.setCornerRadius(dp(10));
+        inBg.setStroke(dp(1), 0x4400E5FF);
+        input.setBackground(inBg);
+        dialogView.addView(input);
+
+        LinearLayout chipsRow = new LinearLayout(this);
+        chipsRow.setOrientation(LinearLayout.HORIZONTAL);
+        chipsRow.setPadding(0, dp(10), 0, dp(14));
+
+        String[] quickPlaces = new String[]{"🏠 Casa", "🏢 Trabajo", "⛽ Gasolina", "🛒 Supermercado"};
+        for (String place : quickPlaces) {
+            TextView chip = Ui.text(this, place, 12, Color.WHITE);
+            chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+            GradientDrawable cBg = new GradientDrawable();
+            cBg.setColor(0x22FFFFFF);
+            cBg.setCornerRadius(dp(12));
+            cBg.setStroke(dp(1), 0x33FFFFFF);
+            chip.setBackground(cBg);
+            Ui.pressable(chip, 0.9f);
+            chip.setOnClickListener(v -> {
+                String clean = place.substring(place.indexOf(' ') + 1);
+                input.setText(clean);
+                input.setSelection(clean.length());
+            });
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+            clp.rightMargin = dp(6);
+            chipsRow.addView(chip, clp);
+        }
+        dialogView.addView(chipsRow);
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.END);
+
+        TextView cancelBtn = Ui.text(this, "Cancelar", 14, 0xAAFFFFFF);
+        cancelBtn.setPadding(dp(14), dp(10), dp(14), dp(10));
+        Ui.pressable(cancelBtn, 0.9f);
+
+        TextView mapBtn = Ui.text(this, "🗺️ Ver en Mapa", 14, Color.WHITE);
+        mapBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        mapBtn.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable mBg = new GradientDrawable();
+        mBg.setColor(0x3300E5FF);
+        mBg.setCornerRadius(dp(10));
+        mBg.setStroke(dp(1), 0x8800E5FF);
+        mapBtn.setBackground(mBg);
+        Ui.pressable(mapBtn, 0.9f);
+
+        TextView wazeBtn = Ui.text(this, "🚗 Iniciar en Waze", 14, Color.WHITE);
+        wazeBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        wazeBtn.setPadding(dp(16), dp(10), dp(16), dp(10));
+        GradientDrawable wBg = new GradientDrawable();
+        wBg.setColor(0xEE00B0FF);
+        wBg.setCornerRadius(dp(10));
+        wazeBtn.setBackground(wBg);
+        Ui.pressable(wazeBtn, 0.9f);
+
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-2, -2);
+        mlp.leftMargin = dp(8);
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(-2, -2);
+        wlp.leftMargin = dp(8);
+
+        btnRow.addView(cancelBtn);
+        btnRow.addView(mapBtn, mlp);
+        btnRow.addView(wazeBtn, wlp);
+        dialogView.addView(btnRow);
+
+        builder.setView(dialogView);
+        final AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        cancelBtn.setOnClickListener(v -> dialog.dismiss());
+
+        mapBtn.setOnClickListener(v -> {
+            String q = input.getText().toString().trim();
+            if (!q.isEmpty()) {
+                dialog.dismiss();
+                searchAndShowOnMap(q);
+            }
+        });
+
+        wazeBtn.setOnClickListener(v -> {
+            String q = input.getText().toString().trim();
+            dialog.dismiss();
+            if (!q.isEmpty()) {
+                openWazeWithQuery(q);
+            } else {
+                openWaze();
+            }
+        });
+
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
+                String q = input.getText().toString().trim();
+                dialog.dismiss();
+                if (!q.isEmpty()) {
+                    searchAndShowOnMap(q);
+                }
+                return true;
+            }
+            return false;
+        });
+
+        dialog.setOnShowListener(d -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+
+        dialog.show();
+        input.requestFocus();
+    }
+
+    private void searchAndShowOnMap(String query) {
+        Toast.makeText(this, "Buscando: " + query + "...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            double lat = 0, lng = 0;
+            String foundName = query;
+            try {
+                String q = URLEncoder.encode(query + " Barranquilla", "UTF-8");
+                URL url = new URL("https://photon.komoot.io/api/?q=" + q + "&limit=1");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestProperty("User-Agent", "NissanMarchLauncher/6.3");
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                if (conn.getResponseCode() == 200) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+                    JSONObject json = new JSONObject(sb.toString());
+                    JSONArray features = json.optJSONArray("features");
+                    if (features != null && features.length() > 0) {
+                        JSONObject feat = features.getJSONObject(0);
+                        JSONObject geom = feat.getJSONObject("geometry");
+                        JSONArray coords = geom.getJSONArray("coordinates");
+                        lng = coords.getDouble(0);
+                        lat = coords.getDouble(1);
+                        JSONObject props = feat.optJSONObject("properties");
+                        if (props != null) {
+                            foundName = props.optString("name", query);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            if (lat == 0 && lng == 0) {
+                try {
+                    String q = URLEncoder.encode(query + " Colombia", "UTF-8");
+                    URL url = new URL("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + q);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestProperty("User-Agent", "NissanMarchLauncher/6.3");
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+                    if (conn.getResponseCode() == 200) {
+                        BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line);
+                        br.close();
+                        JSONArray arr = new JSONArray(sb.toString());
+                        if (arr.length() > 0) {
+                            JSONObject item = arr.getJSONObject(0);
+                            lat = item.getDouble("lat");
+                            lng = item.getDouble("lon");
+                            foundName = item.optString("display_name", query);
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+
+            final double fLat = lat;
+            final double fLng = lng;
+            final String fName = foundName.replace("'", "\\'");
+            handler.post(() -> {
+                if (fLat != 0 && fLng != 0) {
+                    if (mapWebView != null) {
+                        mapWebView.evaluateJavascript("showDestination(" + fLat + ", " + fLng + ", '" + fName + "');", null);
+                    }
+                    Toast.makeText(MainActivity.this, "Destino ubicado en el mapa", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(MainActivity.this, "Abriendo destino en Waze...", Toast.LENGTH_SHORT).show();
+                    openWazeWithQuery(query);
+                }
+            });
+        }).start();
     }
 
     private void openWaze() {
@@ -248,6 +598,27 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             }
         }
         safeStart(i);
+    }
+
+    private void openWazeWithQuery(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            openWaze();
+            return;
+        }
+        try {
+            String enc = URLEncoder.encode(query, "UTF-8");
+            Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("waze://?q=" + enc + "&navigate=yes"));
+            if (getPackageManager().resolveActivity(i, 0) != null) {
+                safeStart(i);
+                return;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0?q=" + URLEncoder.encode(query, "UTF-8")));
+            safeStart(i);
+        } catch (Throwable ignored) {
+            openWaze();
+        }
     }
 
     // ---------- Center Bottom Card: Nissan March 2015 + Weather ----------
@@ -874,6 +1245,12 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             try {
                 locManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 10, locListener);
                 locManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 10, locListener);
+                Location lastGps = locManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                Location lastNet = locManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                Location best = lastGps != null ? lastGps : lastNet;
+                if (best != null && mapWebView != null) {
+                    locListener.onLocationChanged(best);
+                }
             } catch (Exception ignored) {}
         } else {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
