@@ -316,6 +316,18 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         Weather.fetch(this, this::showWeather);
     }
 
+    private final Runnable lightPoll = new Runnable() {
+        @Override
+        public void run() {
+            boolean on = hasLightsImage && carLightsOn();
+            if (on != lightsOn) {
+                lightsOn = on;
+                showCarLights(on);
+            }
+            handler.postDelayed(this, 1500);
+        }
+    };
+
     private final Runnable periodic = new Runnable() {
         public void run() {
             if (Ui.isDark(MainActivity.this) != createdDark) recreate();
@@ -647,9 +659,43 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             startActivity(new Intent(this, EqActivity.class));
             return;
         }
+        // Direct XY AUTO / head unit DSP packages
+        String[] eqPackages = {
+                "com.xyauto.dsp",
+                "com.xyauto.equalizer",
+                "com.xyauto.eq",
+                "com.ts.main.eq",
+                "com.forfan.dsp",
+                "com.microntek.eq"
+        };
+        for (String pkg : eqPackages) {
+            Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
+            if (launch != null && safeStart(launch)) return;
+        }
         Intent eq = new Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
-        if (!safeStart(eq) && !launchByKeyword("ecualiz", "equaliz", "audio", "sonido", "dsp"))
-            toast("No se encontró un ecualizador");
+        if (safeStart(eq)) return;
+        if (launchEqByKeyword()) return;
+        toast("No se encontró un ecualizador");
+    }
+
+    private boolean launchEqByKeyword() {
+        PackageManager pm = getPackageManager();
+        Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(main, 0)) {
+            if (ri.activityInfo.packageName.equals(getPackageName())) continue;
+            String pkg = ri.activityInfo.packageName.toLowerCase();
+            String label = (ri.loadLabel(pm) + " " + pkg).toLowerCase();
+            if (label.contains("grabador") || label.contains("record") || label.contains("voice") || label.contains("dictaphone")) {
+                continue;
+            }
+            if (label.contains("ecualiz") || label.contains("equaliz") || label.contains("dsp")
+                    || pkg.contains(".eq") || label.contains("audiofx")) {
+                Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                        .setClassName(ri.activityInfo.packageName, ri.activityInfo.name);
+                return safeStart(i);
+            }
+        }
+        return false;
     }
 
     private void openSettings() {
@@ -711,11 +757,18 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         illFilter.addAction("com.nwd.ACTION_ILL_STATE_CHANGE");
         illFilter.addAction("com.xyauto.intent.action.ILLUMINATION_ON");
         illFilter.addAction("com.xyauto.intent.action.ILLUMINATION_OFF");
+        illFilter.addAction("com.xyauto.broadcast.ILL_CHANGED");
+        illFilter.addAction("com.xyauto.ACTION_ILL_STATE");
+        illFilter.addAction("com.xyauto.action.HEADLIGHT_ON");
+        illFilter.addAction("com.xyauto.action.HEADLIGHT_OFF");
+        illFilter.addAction("com.ts.main.action.ACTION_ILL_STATE_CHANGE");
         illFilter.addAction("com.microntek.HEADLIGHT_CHANGED");
         illFilter.addAction("android.intent.action.HEADLIGHT_ON");
         illFilter.addAction("android.intent.action.HEADLIGHT_OFF");
+        illFilter.addAction("android.intent.action.SCREEN_BRIGHTNESS_CHANGED");
         illFilter.addAction("android.intent.action.CONFIGURATION_CHANGED");
         registerReceiver(illReceiver, illFilter);
+        handler.post(lightPoll);
         lightsOn = hasLightsImage && carLightsOn();
         android.util.Log.d("CarLights", "onResume lights=" + lightsOn);
         carLights.setAlpha(lightsOn ? 1f : 0f);
@@ -740,6 +793,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         super.onPause();
         if (locManager != null) locManager.removeUpdates(locListener);
         unregisterReceiver(illReceiver);
+        handler.removeCallbacks(lightPoll);
         handler.removeCallbacks(periodic);
         handler.removeCallbacks(radioPoll);
         nowPlaying.removeListener(this);

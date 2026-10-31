@@ -108,10 +108,24 @@ final class Ui {
     static boolean areCarLightsOn(Context c) {
         try {
             android.content.ContentResolver cr = c.getContentResolver();
-            // XY AUTO / AC8227L / YT9216
-            if (android.provider.Settings.System.getInt(cr, "headlight_state", 0) != 0) return true;
-            if (android.provider.Settings.System.getInt(cr, "xy_ill_state", 0) != 0) return true;
-            // NWD / Allwinner
+            String[] keys = {
+                    "headlight_state",
+                    "xy_ill_state",
+                    "ill_state",
+                    "mcu_headlight_state",
+                    "mcu_ill_state",
+                    "xy_headlight_state",
+                    "com.xyauto.ill_state",
+                    "car_lights_state",
+                    "night_mode"
+            };
+            for (String k : keys) {
+                if (android.provider.Settings.System.getInt(cr, k, 0) != 0) return true;
+                try {
+                    if (android.provider.Settings.Global.getInt(cr, k, 0) != 0) return true;
+                } catch (Throwable ignored) {}
+            }
+            // NWD / Allwinner bit 2
             if ((android.provider.Settings.System.getInt(cr, "mcu_no_source_device_state", 0) & 2) != 0) return true;
         } catch (Throwable ignored) {}
         try {
