@@ -429,6 +429,36 @@ final class NowPlaying {
     private int repeatMode = 0; // 0 = NONE, 2 = ALL, 1 = ONE
     private int shuffleMode = 0; // 0 = OFF, 1 = ON
 
+    void holdMediaKey(int keyCode, long durationMs) {
+        new Thread(() -> {
+            long downTime = SystemClock.uptimeMillis();
+            KeyEvent down = new KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, keyCode, 0);
+            try {
+                AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) am.dispatchMediaKeyEvent(down);
+            } catch (Throwable ignored) {}
+            try {
+                Intent bDown = new Intent(Intent.ACTION_MEDIA_BUTTON);
+                bDown.putExtra(Intent.EXTRA_KEY_EVENT, down);
+                ctx.sendOrderedBroadcast(bDown, null);
+            } catch (Throwable ignored) {}
+            try {
+                Thread.sleep(durationMs);
+            } catch (InterruptedException ignored) {}
+            long upTime = SystemClock.uptimeMillis();
+            KeyEvent up = new KeyEvent(downTime, upTime, KeyEvent.ACTION_UP, keyCode, 0);
+            try {
+                AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) am.dispatchMediaKeyEvent(up);
+            } catch (Throwable ignored) {}
+            try {
+                Intent bUp = new Intent(Intent.ACTION_MEDIA_BUTTON);
+                bUp.putExtra(Intent.EXTRA_KEY_EVENT, up);
+                ctx.sendOrderedBroadcast(bUp, null);
+            } catch (Throwable ignored) {}
+        }).start();
+    }
+
     long getPosition() {
         if (controller != null) {
             try {
@@ -461,6 +491,10 @@ final class NowPlaying {
                 }
             } catch (Throwable ignored) {}
         }
+        if (bt.playing && bt.updated > 0) {
+            long pos = getPosition();
+            return Math.max(210000L, pos + 30000L);
+        }
         return 0;
     }
 
@@ -470,6 +504,17 @@ final class NowPlaying {
                 controller.getTransportControls().seekTo(posMs);
             } catch (Throwable ignored) {}
         }
+        if (bt.playing) {
+            long oldPos = getPosition();
+            long diff = posMs - oldPos;
+            bt.updated = SystemClock.elapsedRealtime() - posMs;
+            if (diff > 0) {
+                holdMediaKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, Math.min(1000, Math.max(300, diff / 20)));
+            } else if (diff < 0) {
+                holdMediaKey(KeyEvent.KEYCODE_MEDIA_REWIND, Math.min(1000, Math.max(300, -diff / 20)));
+            }
+        }
+        notifyListeners();
     }
 
     void rewind10() {
@@ -478,8 +523,19 @@ final class NowPlaying {
         if (controller != null && dur > 0) {
             seekTo(Math.max(0, cur - 10000));
         } else {
-            mediaKey(KeyEvent.KEYCODE_MEDIA_REWIND);
+            holdMediaKey(KeyEvent.KEYCODE_MEDIA_REWIND, 500);
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.prev"));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.prev"));
+            try {
+                Intent cmd = new Intent("com.android.music.musicservicecommand");
+                cmd.putExtra("command", "rewind");
+                ctx.sendBroadcast(cmd);
+            } catch (Throwable ignored) {}
+            if (bt.updated > 0) {
+                bt.updated += 10000;
+            }
         }
+        notifyListeners();
     }
 
     void fastForward10() {
@@ -488,8 +544,19 @@ final class NowPlaying {
         if (controller != null && dur > 0) {
             seekTo(Math.min(dur, cur + 10000));
         } else {
-            mediaKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD);
+            holdMediaKey(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 500);
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.next"));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.next"));
+            try {
+                Intent cmd = new Intent("com.android.music.musicservicecommand");
+                cmd.putExtra("command", "fastforward");
+                ctx.sendBroadcast(cmd);
+            } catch (Throwable ignored) {}
+            if (bt.updated > 0) {
+                bt.updated = Math.max(0, bt.updated - 10000);
+            }
         }
+        notifyListeners();
     }
 
     int getRepeatMode() {
@@ -513,6 +580,14 @@ final class NowPlaying {
                 m.invoke(controller.getTransportControls(), next);
             } catch (Throwable ignored) {}
         }
+        try {
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.repeat").putExtra("mode", next));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.repeat").putExtra("mode", next));
+            ctx.sendBroadcast(new Intent("com.spotify.music.service.ACTION_REPEAT").putExtra("mode", next));
+            Intent cmd = new Intent("com.android.music.musicservicecommand");
+            cmd.putExtra("command", "repeat");
+            ctx.sendBroadcast(cmd);
+        } catch (Throwable ignored) {}
         notifyListeners();
     }
 
@@ -537,6 +612,14 @@ final class NowPlaying {
                 m.invoke(controller.getTransportControls(), next);
             } catch (Throwable ignored) {}
         }
+        try {
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.shuffle").putExtra("mode", next));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.shuffle").putExtra("mode", next));
+            ctx.sendBroadcast(new Intent("com.spotify.music.service.ACTION_SHUFFLE").putExtra("mode", next));
+            Intent cmd = new Intent("com.android.music.musicservicecommand");
+            cmd.putExtra("command", "shuffle");
+            ctx.sendBroadcast(cmd);
+        } catch (Throwable ignored) {}
         notifyListeners();
     }
 
