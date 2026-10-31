@@ -135,7 +135,9 @@ final class Ui {
                 return true;
             }
         } catch (Throwable ignored) {}
-        return false;
+        // Fallback: Automatic by schedule (from 6:00 PM to 6:00 AM headlights are on)
+        int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        return h >= 18 || h < 6;
     }
 
     /** Auto = dark while the car's lights are on (ILL wire) or at night. */

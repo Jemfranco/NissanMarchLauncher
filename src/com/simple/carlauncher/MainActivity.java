@@ -8,6 +8,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.app.Activity;
+import android.app.AlertDialog;
+import java.util.ArrayList;
+import java.util.List;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -607,7 +610,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
         dock.addView(dockIcon(R.drawable.ic_w_moon,
                 () -> startActivity(new Intent(this, ScreenOffActivity.class)), compact), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, this::showSelectEqualizerDialog, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings,
                 () -> startActivity(new Intent(this, SetupActivity.class)), compact), weight(1f, 0));
         if (Ui.hasWallpaper(this)) {
@@ -662,11 +665,18 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             startActivity(new Intent(this, EqActivity.class));
             return;
         }
-        // Direct XY AUTO / head unit DSP packages
+        // 1. Saved custom app chosen by the user
+        String savedPkg = getSharedPreferences("ui", MODE_PRIVATE).getString("custom_eq_pkg", "");
+        if (!savedPkg.isEmpty()) {
+            Intent launch = getPackageManager().getLaunchIntentForPackage(savedPkg);
+            if (launch != null && safeStart(launch)) return;
+        }
+        // 2. Direct XY AUTO / head unit DSP packages
         String[] eqPackages = {
                 "com.xyauto.dsp",
                 "com.xyauto.equalizer",
                 "com.xyauto.eq",
+                "com.xyauto.sound",
                 "com.ts.main.eq",
                 "com.forfan.dsp",
                 "com.microntek.eq"
@@ -678,7 +688,31 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         Intent eq = new Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
         if (safeStart(eq)) return;
         if (launchEqByKeyword()) return;
-        toast("No se encontró un ecualizador");
+        showSelectEqualizerDialog();
+    }
+
+    private void showSelectEqualizerDialog() {
+        PackageManager pm = getPackageManager();
+        Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        List<android.content.pm.ResolveInfo> list = pm.queryIntentActivities(main, 0);
+        List<CharSequence> names = new ArrayList<>();
+        List<String> packages = new ArrayList<>();
+        for (android.content.pm.ResolveInfo ri : list) {
+            if (ri.activityInfo.packageName.equals(getPackageName())) continue;
+            names.add(ri.loadLabel(pm));
+            packages.add(ri.activityInfo.packageName);
+        }
+        CharSequence[] items = names.toArray(new CharSequence[0]);
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Selecciona tu app de sonido / EQ")
+                .setItems(items, (dialog, which) -> {
+                    String chosenPkg = packages.get(which);
+                    getSharedPreferences("ui", MODE_PRIVATE).edit().putString("custom_eq_pkg", chosenPkg).apply();
+                    toast("Guardado: " + items[which]);
+                    safeStart(pm.getLaunchIntentForPackage(chosenPkg));
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private boolean launchEqByKeyword() {
@@ -688,11 +722,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             if (ri.activityInfo.packageName.equals(getPackageName())) continue;
             String pkg = ri.activityInfo.packageName.toLowerCase();
             String label = (ri.loadLabel(pm) + " " + pkg).toLowerCase();
-            if (label.contains("grabador") || label.contains("record") || label.contains("voice") || label.contains("dictaphone")) {
+            if (label.contains("grabador") || label.contains("record") || label.contains("voice") || label.contains("dictaphone")
+                    || label.contains("music") || label.contains("musica") || label.contains("player") || label.contains("reproductor")) {
                 continue;
             }
             if (label.contains("ecualiz") || label.contains("equaliz") || label.contains("dsp")
-                    || pkg.contains(".eq") || label.contains("audiofx")) {
+                    || label.contains("sonido") || label.contains("audio") || label.contains("sound")
+                    || pkg.contains(".eq") || label.contains("audiofx") || pkg.contains("car.setting")) {
                 Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                         .setClassName(ri.activityInfo.packageName, ri.activityInfo.name);
                 return safeStart(i);
