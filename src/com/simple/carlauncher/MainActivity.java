@@ -95,21 +95,24 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
     }
 
-    private String getMapHtml() {
-        if (cachedMapHtml != null) return cachedMapHtml;
+    private String getMapHtml(boolean isDark) {
         String css = readRawString(R.raw.leaflet_css);
         String js = readRawString(R.raw.leaflet_js);
 
-        cachedMapHtml = "<!DOCTYPE html><html><head>"
+        return "<!DOCTYPE html><html><head>"
             + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'/>"
             + "<style>"
             + css
-            + "html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #e5e3df; overflow: hidden; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }"
+            + "html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: " + (isDark ? "#0c101d" : "#e5e3df") + "; overflow: hidden; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; transition: background 0.3s ease; }"
             + ".leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }"
-            + ".leaflet-container { background: #e5e3df; }"
+            + ".leaflet-container { background: " + (isDark ? "#0c101d" : "#e5e3df") + "; transition: background 0.3s ease; }"
+            + "body.dark-map, body.dark-map #map, body.dark-map .leaflet-container { background: #0c101d !important; }"
+            + "body.dark-map .leaflet-tile { filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(125%) saturate(130%); -webkit-filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(125%) saturate(130%); }"
             + ".nav-box { position: relative; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; pointer-events: none; }"
             + ".nav-pulse { position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(0, 140, 255, 0.35); box-shadow: 0 0 16px rgba(0, 140, 255, 0.7); animation: ring-pulse 1.8s infinite ease-out; }"
             + ".nav-arrow { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 22px solid #0066FF; filter: drop-shadow(0 0 6px rgba(0, 80, 220, 0.9)); z-index: 5; }"
+            + "body.dark-map .nav-arrow { border-bottom-color: #00E5FF !important; filter: drop-shadow(0 0 8px #00E5FF) !important; }"
+            + "body.dark-map .nav-pulse { background: rgba(0, 229, 255, 0.25) !important; box-shadow: 0 0 14px #00E5FF !important; }"
             + ".dest-pin { position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 26px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45)); animation: bounce 1s infinite alternate; cursor: pointer; }"
             + "@keyframes bounce { 0% { transform: translateY(0); } 100% { transform: translateY(-7px); } }"
             + "@keyframes ring-pulse { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }"
@@ -117,7 +120,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             + "<script>"
             + js
             + "</script>"
-            + "</head><body>"
+            + "</head><body class='" + (isDark ? "dark-map" : "") + "'>"
             + "<div id='map'></div>"
             + "<script>"
             + "var map = L.map('map', {zoomControl: false, attributionControl: false, dragging: true, touchZoom: true, tap: false, doubleClickZoom: true, bounceAtZoomLimits: false}).setView([10.9685, -74.7813], 17);"
@@ -126,6 +129,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             + "var marker = L.marker([10.9685, -74.7813], {icon: carIcon}).addTo(map);"
             + "var destMarker = null;"
             + "function setPos(lat, lng) { var z = map.getZoom(); map.setView([lat, lng], z > 0 ? z : 17); marker.setLatLng([lat, lng]); }"
+            + "function setDarkMode(dark) { if (dark) document.body.classList.add('dark-map'); else document.body.classList.remove('dark-map'); }"
             + "function showDestination(lat, lng, label) {"
             + "  if (destMarker) { map.removeLayer(destMarker); }"
             + "  var destIcon = L.divIcon({ className: 'custom-dest', html: '<div class=\"dest-pin\">📍</div>', iconSize: [36, 36], iconAnchor: [18, 34] });"
@@ -161,7 +165,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             + "  }"
             + "});"
             + "</script></body></html>";
-        return cachedMapHtml;
     }
     private NowPlaying nowPlaying;
 
@@ -173,10 +176,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private boolean lightsOn;
     private TextView oilInfo;
     private boolean createdDark;
+    private boolean createdMapDark;
     private String createdProfile;
 
     private String profileStamp() {
-        return Profile.name(this) + "|" + Profile.carPhotoFile(this).lastModified() + "|" + Ui.wallpaper(this);
+        return Profile.name(this) + "|" + Profile.carPhotoFile(this).lastModified() + "|" + Ui.wallpaper(this) + "|" + Ui.isMapDark(this);
     }
     private GradientDrawable oilBg;
     private long lastWeatherFetch;
@@ -213,6 +217,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         radio.bind(this);
         nowPlaying = NowPlaying.get(this);
         createdDark = Ui.isDark(this);
+        createdMapDark = Ui.isMapDark(this);
         createdProfile = profileStamp();
         // Shared installs: ask for name, car photo and permissions on first start.
         if (!Profile.isSetupDone(this) && Profile.bundledCar(this, false) == 0) {
@@ -228,12 +233,15 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         // ---------- Left Card: Live Map (Waze) ----------
 
     private View buildMapCard(boolean compact) {
+        boolean mapDark = Ui.isMapDark(this);
+        createdMapDark = mapDark;
+
         FrameLayout card = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 Ui.hasWallpaper(this) ? new int[]{0x59101424, 0x6E0A0D18}
-                : Ui.pick(this, new int[]{0x9924376E, 0x66182046}, new int[]{0xFF14141E, 0xFF0D0D14}));
+                : (mapDark ? new int[]{0xFF14141E, 0xFF0D0D14} : new int[]{0xFFE8EEF5, 0xFFCBD5E1}));
         bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(1), Ui.hasWallpaper(this) ? 0x33FFFFFF : 0x443FA9FF);
+        bg.setStroke(dp(1), Ui.hasWallpaper(this) ? 0x33FFFFFF : (mapDark ? 0x443FA9FF : 0x440066FF));
         card.setBackground(bg);
         card.setClipToOutline(true);
 
@@ -268,7 +276,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         });
 
         mapWebView.setWebViewClient(new WebViewClient());
-        mapWebView.loadDataWithBaseURL("https://maps.google.com", getMapHtml(), "text/html", "UTF-8", null);
+        mapWebView.loadDataWithBaseURL("https://maps.google.com", getMapHtml(mapDark), "text/html", "UTF-8", null);
         card.addView(mapWebView, new FrameLayout.LayoutParams(-1, -1));
 
         // Barra superior con Waze Chip y Botón Lupa de Búsqueda
@@ -290,13 +298,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
 
-        TextView searchBtn = Ui.text(this, "🔍 Buscar", compact ? 11 : 12, Color.WHITE);
+        TextView searchBtn = Ui.text(this, "🔍 Buscar", compact ? 11 : 12, mapDark ? Color.WHITE : 0xFF141E33);
         searchBtn.setTypeface(Typeface.DEFAULT_BOLD);
         searchBtn.setPadding(dp(compact ? 10 : 14), dp(compact ? 5 : 7), dp(compact ? 10 : 14), dp(compact ? 5 : 7));
         GradientDrawable sBg = new GradientDrawable();
-        sBg.setColor(0xEE111827);
+        sBg.setColor(mapDark ? 0xEE111827 : 0xEEFFFFFF);
         sBg.setCornerRadius(dp(14));
-        sBg.setStroke(dp(1), 0x8800E5FF);
+        sBg.setStroke(dp(1), mapDark ? 0x8800E5FF : 0x880066FF);
         searchBtn.setBackground(sBg);
         Ui.pressable(searchBtn, 0.90f);
         searchBtn.setOnClickListener(v -> showSearchDialog());
@@ -305,12 +313,12 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
         card.addView(topBar, tlp);
 
-        TextView bottomPrompt = Ui.text(this, "Toca el mapa para abrir Waze ↗", compact ? 10 : 12, 0xEEFFFFFF);
+        TextView bottomPrompt = Ui.text(this, "Toca el mapa para abrir Waze ↗", compact ? 10 : 12, mapDark ? 0xEEFFFFFF : 0xFF141E33);
         bottomPrompt.setPadding(dp(compact ? 10 : 14), dp(compact ? 4 : 6), dp(compact ? 10 : 14), dp(compact ? 4 : 6));
         GradientDrawable pBg = new GradientDrawable();
-        pBg.setColor(0xCC101422);
+        pBg.setColor(mapDark ? 0xCC101422 : 0xEEFFFFFF);
         pBg.setCornerRadius(dp(12));
-        pBg.setStroke(dp(1), 0x33FFFFFF);
+        pBg.setStroke(dp(1), mapDark ? 0x33FFFFFF : 0x440066FF);
         bottomPrompt.setBackground(pBg);
         Ui.pressable(bottomPrompt, 0.90f);
         bottomPrompt.setOnClickListener(v -> openWaze());
@@ -324,13 +332,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
         int zSize = dp(compact ? 30 : 36);
 
-        TextView zoomIn = Ui.text(this, "+", compact ? 18 : 20, Color.WHITE);
+        TextView zoomIn = Ui.text(this, "+", compact ? 18 : 20, mapDark ? Color.WHITE : 0xFF141E33);
         zoomIn.setTypeface(Typeface.DEFAULT_BOLD);
         zoomIn.setGravity(Gravity.CENTER);
         GradientDrawable zBgIn = new GradientDrawable();
-        zBgIn.setColor(0xCC111827);
+        zBgIn.setColor(mapDark ? 0xCC111827 : 0xEEFFFFFF);
         zBgIn.setCornerRadius(dp(8));
-        zBgIn.setStroke(dp(1), 0x4400E5FF);
+        zBgIn.setStroke(dp(1), mapDark ? 0x4400E5FF : 0x440066FF);
         zoomIn.setBackground(zBgIn);
         Ui.pressable(zoomIn, 0.88f);
         zoomIn.setOnClickListener(v -> {
@@ -338,13 +346,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         });
         zoomControls.addView(zoomIn, new LinearLayout.LayoutParams(zSize, zSize));
 
-        TextView zoomOut = Ui.text(this, "−", compact ? 18 : 20, Color.WHITE);
+        TextView zoomOut = Ui.text(this, "−", compact ? 18 : 20, mapDark ? Color.WHITE : 0xFF141E33);
         zoomOut.setTypeface(Typeface.DEFAULT_BOLD);
         zoomOut.setGravity(Gravity.CENTER);
         GradientDrawable zBgOut = new GradientDrawable();
-        zBgOut.setColor(0xCC111827);
+        zBgOut.setColor(mapDark ? 0xCC111827 : 0xEEFFFFFF);
         zBgOut.setCornerRadius(dp(8));
-        zBgOut.setStroke(dp(1), 0x4400E5FF);
+        zBgOut.setStroke(dp(1), mapDark ? 0x4400E5FF : 0x440066FF);
         zoomOut.setBackground(zBgOut);
         Ui.pressable(zoomOut, 0.88f);
         zoomOut.setOnClickListener(v -> {
@@ -745,6 +753,11 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             if (on != lightsOn) {
                 lightsOn = on;
                 showCarLights(on);
+                if (Ui.isDark(MainActivity.this) != createdDark || Ui.isMapDark(MainActivity.this) != createdMapDark) {
+                    recreate();
+                } else if (mapWebView != null) {
+                    mapWebView.evaluateJavascript("setDarkMode(" + Ui.isMapDark(MainActivity.this) + ");", null);
+                }
             }
             handler.postDelayed(this, 1500);
         }
@@ -752,7 +765,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     private final Runnable periodic = new Runnable() {
         public void run() {
-            if (Ui.isDark(MainActivity.this) != createdDark) recreate();
+            if (Ui.isDark(MainActivity.this) != createdDark || Ui.isMapDark(MainActivity.this) != createdMapDark) recreate();
             updateGreeting();
             fetchWeather(false);
             handler.postDelayed(this, 60 * 1000);
@@ -783,7 +796,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             lightsOn = on;
             showCarLights(on);
             // Auto theme follows the car's lights; give the kernel a moment to store the state.
-            handler.postDelayed(() -> { if (Ui.isDark(MainActivity.this) != createdDark) recreate(); }, 1500);
+            handler.postDelayed(() -> {
+                if (Ui.isDark(MainActivity.this) != createdDark || Ui.isMapDark(MainActivity.this) != createdMapDark) {
+                    recreate();
+                } else if (mapWebView != null) {
+                    mapWebView.evaluateJavascript("setDarkMode(" + Ui.isMapDark(MainActivity.this) + ");", null);
+                }
+            }, 1000);
         }
     };
 
@@ -1221,7 +1240,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     @Override
     protected void onResume() {
         super.onResume();
-        if (Ui.isDark(this) != createdDark || !profileStamp().equals(createdProfile)) {
+        if (Ui.isDark(this) != createdDark || Ui.isMapDark(this) != createdMapDark || !profileStamp().equals(createdProfile)) {
             // theme (setting, night or car lights) or profile (name, car photo) changed
             recreate();
             return;

@@ -150,6 +150,18 @@ final class Ui {
         return h >= 19 || h < 6;
     }
 
+    /**
+     * Determina si el mapa debe mostrarse en tema oscuro:
+     * - Si tiene un fondo de pantalla diferente al Tema Original: SIEMPRE OSCURO por defecto.
+     * - Si usa el Tema Original: según el tema activo (Oscuro -> oscuro, Claro -> claro, Auto -> según luces o noche).
+     */
+    static boolean isMapDark(Context c) {
+        if (hasWallpaper(c)) {
+            return true;
+        }
+        return isDark(c);
+    }
+
     /** Picks the light or dark variant of a gradient. */
     static int[] pick(Context c, int[] light, int[] dark) {
         return isDark(c) ? dark : light;
