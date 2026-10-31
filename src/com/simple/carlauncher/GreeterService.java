@@ -28,7 +28,7 @@ import java.util.List;
 public class GreeterService extends Service {
 
     private static final String TAG = "Greeter";
-    private static final long DELAY_MS = 20_000;
+    private static final long DELAY_MS = 5_000;
     private static final long MIN_INTERVAL_MS = 60_000; // only skip duplicate wake signals
 
     // MCU source ids (ApplicationList.xml "Source") of the last audio source before ACC off.
@@ -51,6 +51,10 @@ public class GreeterService extends Service {
         f.addAction("com.nwd.action.ACTION_CHANGE_SOURCE");      // auto EQ: radio vs music curve
         f.addAction("com.nwd.action.ACTION_VOLUME_STATE_CHANGE"); // auto EQ: loudness
         f.addAction("com.nwd.action.ACTION_MCU_STATE_CHANGE"); // ACC off (3) / on (1)
+        f.addAction("com.xyauto.intent.action.ACC_ON");
+        f.addAction("com.xyauto.broadcast.ACC_CHANGED");
+        f.addAction(Intent.ACTION_SCREEN_ON);
+        f.addAction(Intent.ACTION_USER_PRESENT);
         f.addAction("com.bt.ACTION_A2DP_ESTABLISHED");
         f.addAction("com.bt.ACTION_AVRCP_ESTABLISHED");
         f.addAction("com.bt.ACTION_BT_MUSIC_PLAY");
@@ -87,7 +91,10 @@ public class GreeterService extends Service {
                 Log.d(TAG, "mcu_state=" + state);
                 if (state == 3) onCarOff();
                 else if (state == 1) onCarOn();
-            } else if ("com.simple.carlauncher.TEST_CAR_ON".equals(a)) {
+            } else if ("com.xyauto.intent.action.ACC_ON".equals(a)
+                    || Intent.ACTION_SCREEN_ON.equals(a)
+                    || Intent.ACTION_USER_PRESENT.equals(a)
+                    || "com.simple.carlauncher.TEST_CAR_ON".equals(a)) {
                 onCarOn();
             } else if ("com.bt.ACTION_BT_MUSIC_PAUSE".equals(a)) {
                 btPlaying = false;

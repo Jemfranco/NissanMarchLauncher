@@ -283,7 +283,10 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         weatherExtra = left(Ui.text(this, "", 1, 0x00000000)); // hidden helper placeholder
 
         Ui.pressable(card, 0.98f);
-        card.setOnClickListener(v -> fetchWeather(true));
+        card.setOnClickListener(v -> {
+            fetchWeather(true);
+            sendBroadcast(new Intent("com.simple.carlauncher.TEST_CAR_ON"));
+        });
         return card;
     }
 
