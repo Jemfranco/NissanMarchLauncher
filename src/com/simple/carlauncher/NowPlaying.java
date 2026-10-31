@@ -1,5 +1,6 @@
 package com.simple.carlauncher;
 
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -10,9 +11,13 @@ import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
+import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.SystemClock;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 
 import java.util.ArrayList;
@@ -21,7 +26,7 @@ import java.util.List;
 /**
  * Tracks what is playing from any source and routes controls back to it:
  * apps with a media session (Spotify, YouTube Music…), the factory USB/SD player
- * (com.android.music.* broadcasts) and Bluetooth audio (com.bt.* broadcasts).
+ * (com.android.music.* broadcasts) and Bluetooth audio (com.bt.* / XY AUTO broadcasts).
  */
 final class NowPlaying {
 
@@ -48,6 +53,22 @@ final class NowPlaying {
         return instance;
     }
 
+    static boolean isNotificationListenerEnabled(Context context) {
+        String pkgName = context.getPackageName();
+        final String flat = Settings.Secure.getString(
+                context.getContentResolver(), "enabled_notification_listeners");
+        if (!TextUtils.isEmpty(flat)) {
+            final String[] names = flat.split(":");
+            for (String name : names) {
+                final ComponentName cn = ComponentName.unflattenFromString(name);
+                if (cn != null && TextUtils.equals(pkgName, cn.getPackageName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private final Context ctx;
     private final List<Listener> listeners = new ArrayList<>();
     private final Track app = new Track(), local = new Track(), bt = new Track();
@@ -56,6 +77,10 @@ final class NowPlaying {
     private final MediaSessionManager sessions;
     private final ComponentName notificationListener;
     private MediaController controller;
+    private boolean sessionListenerRegistered = false;
+
+    private final MediaSessionManager.OnActiveSessionsChangedListener sessionsChangedListener =
+            list -> refreshSessions();
 
     private NowPlaying(Context c) {
         ctx = c;
@@ -65,18 +90,23 @@ final class NowPlaying {
         IntentFilter f = new IntentFilter();
         f.addAction("com.android.music.metachanged");
         f.addAction("com.android.music.playstatechanged");
+        f.addAction("com.android.music.playbackcomplete");
+        f.addAction("com.android.music.queuechanged");
+        f.addAction("com.spotify.music.metadatachanged");
+        f.addAction("com.spotify.music.playbackstatechanged");
+        f.addAction("com.spotify.music.queuechanged");
         f.addAction("com.bt.ACTION_AVRCP_MUSIC_ID3");
         f.addAction("com.bt.ACTION_BT_MUSIC_PLAY");
         f.addAction("com.bt.ACTION_BT_MUSIC_PAUSE");
         f.addAction("com.bt.ACTION_A2DP_RELEASE");
         f.addAction("com.bt.ACTION_AVRCP_RELEASE");
+        f.addAction("com.xyauto.bt.music.id3");
+        f.addAction("com.xyauto.bt.music.play");
+        f.addAction("com.xyauto.bt.music.pause");
+        f.addAction("autochips.intent.action.MUSIC_CHANGED");
         c.registerReceiver(receiver, f);
 
-        try {
-            sessions.addOnActiveSessionsChangedListener(list -> refreshSessions(), notificationListener);
-        } catch (SecurityException ignored) {
-            // Notification access not granted: app sessions are not visible.
-        }
+        ensureSessionListenerRegistered();
         refreshSessions();
 
         btClient.bind(c, () -> {
@@ -85,6 +115,57 @@ final class NowPlaying {
             btClient.queryId3();
             notifyListeners();
         });
+    }
+
+    private void ensureSessionListenerRegistered() {
+        if (sessionListenerRegistered) return;
+        try {
+            sessions.addOnActiveSessionsChangedListener(sessionsChangedListener, notificationListener);
+            sessionListenerRegistered = true;
+        } catch (SecurityException ignored) {
+            sessionListenerRegistered = false;
+        } catch (Throwable t) {
+            Log.w("NowPlaying", "Failed to add active sessions listener", t);
+        }
+    }
+
+    void onNotificationListenerConnected() {
+        ensureSessionListenerRegistered();
+        refreshSessions();
+        notifyListeners();
+    }
+
+    void onNotificationMedia(String pkg, MediaSession.Token token, String title, String artist, Bitmap art) {
+        if (pkg == null || pkg.equals(ctx.getPackageName()) || "com.android.server.telecom".equals(pkg)) return;
+
+        boolean isMedia = token != null || !title.isEmpty();
+        if (!isMedia) return;
+
+        if (token != null) {
+            try {
+                MediaController mc = new MediaController(ctx, token);
+                setController(mc);
+            } catch (Throwable t) {
+                Log.w("NowPlaying", "Failed to wrap MediaSession.Token", t);
+            }
+        }
+
+        if (!title.isEmpty()) {
+            app.title = title;
+            if (!artist.isEmpty()) app.artist = artist;
+            if (art != null) app.art = art;
+            app.updated = SystemClock.elapsedRealtime();
+            notifyListeners();
+        } else if (art != null && app.art == null) {
+            app.art = art;
+            notifyListeners();
+        }
+    }
+
+    void onNotificationRemoved(String pkg) {
+        if (controller != null && pkg != null && pkg.equals(controller.getPackageName())) {
+            refreshSessions();
+        }
     }
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -97,7 +178,7 @@ final class NowPlaying {
                 handle(a, i);
             } catch (RuntimeException e) {
                 // Factory apps may attach extras we cannot unparcel; never crash the launcher for it.
-                android.util.Log.w("NowPlaying", "Ignoring broadcast " + a, e);
+                Log.w("NowPlaying", "Ignoring broadcast " + a, e);
             }
         }
 
@@ -106,22 +187,45 @@ final class NowPlaying {
             switch (a) {
                 case "com.android.music.metachanged":
                 case "com.android.music.playstatechanged":
-                    if (i.hasExtra("track")) local.title = nz(i.getStringExtra("track"));
-                    if (i.hasExtra("artist")) local.artist = nz(i.getStringExtra("artist"));
-                    local.playing = i.getBooleanExtra("playing", local.playing);
+                case "com.spotify.music.metadatachanged":
+                case "com.spotify.music.playbackstatechanged":
+                case "autochips.intent.action.MUSIC_CHANGED":
+                    String track = i.getStringExtra("track");
+                    if (track == null) track = i.getStringExtra("title");
+                    if (track == null) track = i.getStringExtra("track_name");
+                    if (track != null && !track.trim().isEmpty()) local.title = track.trim();
+
+                    String artist = i.getStringExtra("artist");
+                    if (artist == null) artist = i.getStringExtra("artist_name");
+                    if (artist != null && !artist.trim().isEmpty()) local.artist = artist.trim();
+
+                    if (i.hasExtra("playing")) local.playing = i.getBooleanExtra("playing", local.playing);
+                    else if (i.hasExtra("playstate")) local.playing = i.getBooleanExtra("playstate", local.playing);
+                    else if (i.hasExtra("isplaying")) local.playing = i.getBooleanExtra("isplaying", local.playing);
                     local.updated = now;
                     break;
                 case "com.bt.ACTION_AVRCP_MUSIC_ID3":
-                    bt.title = nz(i.getStringExtra("extra_avrcp_id3_title"));
-                    bt.artist = nz(i.getStringExtra("extra_avrcp_id3_artist"));
-                    if (!bt.title.isEmpty()) bt.updated = now;
+                case "com.xyauto.bt.music.id3":
+                    String btTitle = i.getStringExtra("extra_avrcp_id3_title");
+                    if (btTitle == null) btTitle = i.getStringExtra("id3_title");
+                    if (btTitle == null) btTitle = i.getStringExtra("title");
+                    if (btTitle != null && !btTitle.trim().isEmpty()) {
+                        bt.title = btTitle.trim();
+                        bt.updated = now;
+                    }
+                    String btArtist = i.getStringExtra("extra_avrcp_id3_artist");
+                    if (btArtist == null) btArtist = i.getStringExtra("id3_artist");
+                    if (btArtist == null) btArtist = i.getStringExtra("artist");
+                    if (btArtist != null && !btArtist.trim().isEmpty()) bt.artist = btArtist.trim();
                     break;
                 case "com.bt.ACTION_BT_MUSIC_PLAY":
+                case "com.xyauto.bt.music.play":
                     bt.playing = true;
                     bt.updated = now;
-                    btClient.queryId3();
+                    if (btClient.isBound()) btClient.queryId3();
                     break;
                 case "com.bt.ACTION_BT_MUSIC_PAUSE":
+                case "com.xyauto.bt.music.pause":
                     bt.playing = false;
                     break;
                 default: // A2DP/AVRCP released: phone disconnected
@@ -143,7 +247,8 @@ final class NowPlaying {
         public void onSessionDestroyed() { refreshSessions(); }
     };
 
-    private void refreshSessions() {
+    void refreshSessions() {
+        ensureSessionListenerRegistered();
         List<MediaController> list = null;
         try {
             list = sessions.getActiveSessions(notificationListener);
@@ -157,27 +262,59 @@ final class NowPlaying {
                 if (s != null && s.getState() == PlaybackState.STATE_PLAYING) { pick = c; break; }
             }
         }
-        if (controller != null) controller.unregisterCallback(sessionCallback);
+        if (pick != null || controller == null) {
+            setController(pick);
+        }
+    }
+
+    private void setController(MediaController pick) {
+        if (controller == pick && pick != null) return;
+        if (controller != null) {
+            try {
+                controller.unregisterCallback(sessionCallback);
+            } catch (Throwable ignored) {}
+        }
         controller = pick;
-        if (controller != null) controller.registerCallback(sessionCallback);
+        if (controller != null) {
+            try {
+                controller.registerCallback(sessionCallback);
+            } catch (Throwable ignored) {}
+        }
         readSession();
     }
 
     private void readSession() {
         if (controller == null) {
-            app.title = "";
-            app.artist = "";
-            app.art = null;
-            app.playing = false;
-            app.updated = 0;
+            if (app.updated == 0) {
+                app.title = "";
+                app.artist = "";
+                app.art = null;
+                app.playing = false;
+            }
         } else {
-            MediaMetadata m = controller.getMetadata();
-            PlaybackState s = controller.getPlaybackState();
-            app.title = m == null ? "" : nz(m.getString(MediaMetadata.METADATA_KEY_TITLE));
-            app.artist = m == null ? "" : nz(m.getString(MediaMetadata.METADATA_KEY_ARTIST));
-            Bitmap art = m == null ? null : m.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-            if (art == null && m != null) art = m.getBitmap(MediaMetadata.METADATA_KEY_ART);
-            app.art = art;
+            MediaMetadata m = null;
+            PlaybackState s = null;
+            try {
+                m = controller.getMetadata();
+                s = controller.getPlaybackState();
+            } catch (Throwable ignored) {}
+
+            if (m != null) {
+                String title = m.getString(MediaMetadata.METADATA_KEY_TITLE);
+                if (title == null || title.isEmpty()) title = m.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+                if (title != null && !title.trim().isEmpty()) app.title = title.trim();
+
+                String artist = m.getString(MediaMetadata.METADATA_KEY_ARTIST);
+                if (artist == null || artist.isEmpty()) artist = m.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST);
+                if (artist == null || artist.isEmpty()) artist = m.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
+                if (artist != null && !artist.trim().isEmpty()) app.artist = artist.trim();
+
+                Bitmap art = m.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+                if (art == null) art = m.getBitmap(MediaMetadata.METADATA_KEY_ART);
+                if (art == null) art = m.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+                if (art != null) app.art = art;
+            }
+
             boolean playing = s != null && s.getState() == PlaybackState.STATE_PLAYING;
             if (playing || !app.title.isEmpty()) app.updated = SystemClock.elapsedRealtime();
             app.playing = playing;
@@ -221,7 +358,7 @@ final class NowPlaying {
 
     void playPause() {
         Source s = current();
-        if (s == Source.BT) {
+        if (s == Source.BT && btClient.isBound()) {
             if (Ui.radioIsSource(ctx)) {
                 // Radio has the speakers (the phone may even be playing muted): bring Bluetooth in.
                 Ui.userChoseRadioAt = 0;
@@ -230,9 +367,15 @@ final class NowPlaying {
             } else {
                 btClient.playControl(bt.playing ? BtClient.PAUSE : BtClient.PLAY);
             }
-        } else if (s == Source.APP && controller != null) {
-            if (app.playing) controller.getTransportControls().pause();
-            else controller.getTransportControls().play();
+        } else if (controller != null && controller.getTransportControls() != null) {
+            try {
+                PlaybackState ps = controller.getPlaybackState();
+                boolean playing = ps != null && ps.getState() == PlaybackState.STATE_PLAYING;
+                if (playing) controller.getTransportControls().pause();
+                else controller.getTransportControls().play();
+            } catch (Throwable t) {
+                mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+            }
         } else {
             mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
         }
@@ -240,11 +383,15 @@ final class NowPlaying {
 
     void skip(boolean next) {
         Source s = current();
-        if (s == Source.BT) {
+        if (s == Source.BT && btClient.isBound()) {
             btClient.playControl(next ? BtClient.NEXT : BtClient.PREVIOUS);
-        } else if (s == Source.APP && controller != null) {
-            if (next) controller.getTransportControls().skipToNext();
-            else controller.getTransportControls().skipToPrevious();
+        } else if (controller != null && controller.getTransportControls() != null) {
+            try {
+                if (next) controller.getTransportControls().skipToNext();
+                else controller.getTransportControls().skipToPrevious();
+            } catch (Throwable t) {
+                mediaKey(next ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+            }
         } else {
             mediaKey(next ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS);
         }
@@ -252,15 +399,75 @@ final class NowPlaying {
 
     /** Opens the screen that belongs to the current source. */
     void open(Context c) {
+        if (!isNotificationListenerEnabled(c)) {
+            new AlertDialog.Builder(c, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("Acceso a música y notificaciones")
+                    .setMessage("Para mostrar el título de la canción, portada y cambiar de canción con Spotify, activa el permiso de 'Inicio' en la lista que se abrirá.")
+                    .setPositiveButton("Activar", (dialog, which) -> {
+                        try {
+                            c.startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        } catch (Exception e) {
+                            c.startActivity(new Intent(Settings.ACTION_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        }
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return;
+        }
+
         Source s = current();
-        if (s == Source.BT) {
-            c.startActivity(new Intent(c, BtActivity.class));
+        if (s == Source.BT && Profile.isNwd(c)) {
+            c.startActivity(new Intent(c, BtActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } else if (s == Source.APP && controller != null) {
             Intent i = c.getPackageManager().getLaunchIntentForPackage(controller.getPackageName());
-            if (i != null) c.startActivity(i);
+            if (i != null) {
+                c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            }
+            launchMusicApp(c);
         } else {
-            Ui.launch(c, LOCAL_PLAYER);
+            launchMusicApp(c);
         }
+    }
+
+    static void launchMusicApp(Context c) {
+        PackageManager pm = c.getPackageManager();
+        String[] preferred = {
+                "com.spotify.music",
+                "com.spotify.lite",
+                "com.google.android.apps.youtube.music",
+                "com.google.android.music",
+                "deezer.android.app",
+                "com.amazon.mp3",
+                "com.apple.android.music",
+                "com.autochips.music",
+                "com.xyauto.music",
+                "com.android.music"
+        };
+        for (String pkg : preferred) {
+            Intent launch = pm.getLaunchIntentForPackage(pkg);
+            if (launch != null) {
+                c.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            }
+        }
+        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(query, 0)) {
+            String pkg = ri.activityInfo.packageName.toLowerCase();
+            String name = (ri.loadLabel(pm) + " " + pkg).toLowerCase();
+            if (pkg.equals(c.getPackageName())) continue;
+            if (name.contains("spotify") || name.contains("music") || name.contains("musica")
+                    || name.contains("player") || name.contains("reproductor")) {
+                Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                        .setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                c.startActivity(i);
+                return;
+            }
+        }
+        Ui.launch(c, LOCAL_PLAYER);
     }
 
     void addListener(Listener l) {
@@ -277,11 +484,40 @@ final class NowPlaying {
         for (Listener l : new ArrayList<>(listeners)) l.onNowPlayingChanged();
     }
 
-    private void mediaKey(int keyCode) {
-        AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+    void mediaKey(int keyCode) {
         long now = SystemClock.uptimeMillis();
-        am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0));
-        am.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0));
+        KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0);
+        KeyEvent up = new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0);
+
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                am.dispatchMediaKeyEvent(down);
+                am.dispatchMediaKeyEvent(up);
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            Intent btnDown = new Intent(Intent.ACTION_MEDIA_BUTTON);
+            btnDown.putExtra(Intent.EXTRA_KEY_EVENT, down);
+            ctx.sendOrderedBroadcast(btnDown, null);
+            Intent btnUp = new Intent(Intent.ACTION_MEDIA_BUTTON);
+            btnUp.putExtra(Intent.EXTRA_KEY_EVENT, up);
+            ctx.sendOrderedBroadcast(btnUp, null);
+        } catch (Throwable ignored) {}
+
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.next"));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.next"));
+            ctx.sendBroadcast(new Intent("com.android.music.musicservicecommand.next"));
+        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.prev"));
+            ctx.sendBroadcast(new Intent("com.autochips.bluetooth.prev"));
+            ctx.sendBroadcast(new Intent("com.android.music.musicservicecommand.previous"));
+        } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
+            ctx.sendBroadcast(new Intent("com.xyauto.bt.music.toggle"));
+            ctx.sendBroadcast(new Intent("com.android.music.musicservicecommand.togglepause"));
+        }
     }
 
     private static String nz(String s) {

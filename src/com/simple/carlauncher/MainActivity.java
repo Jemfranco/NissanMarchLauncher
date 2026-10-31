@@ -570,11 +570,20 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     public void onNowPlayingChanged() {
         NowPlaying.Source s = nowPlaying.current();
         NowPlaying.Track t = s == null ? null : nowPlaying.track(s);
+        boolean hasNotifAccess = NowPlaying.isNotificationListenerEnabled(this);
         boolean empty = t == null || t.title.isEmpty();
-        songSource.setText(s == null ? "MÚSICA" : nowPlaying.label(s).toUpperCase());
-        songTitle.setText(empty ? "Nada sonando" : t.title);
-        songArtist.setText(empty ? "Toca para abrir la música" : t.artist);
-        playBtn.setImageResource(t != null && t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+
+        if (!hasNotifAccess && empty) {
+            songSource.setText("PERMISO REQUERIDO");
+            songTitle.setText("Música desactivada");
+            songArtist.setText("Toca aquí para permitir acceso a notificaciones");
+            playBtn.setImageResource(R.drawable.ic_play);
+        } else {
+            songSource.setText(s == null ? "MÚSICA" : nowPlaying.label(s).toUpperCase());
+            songTitle.setText(empty ? "Nada sonando" : t.title);
+            songArtist.setText(empty ? "Toca para abrir la música" : t.artist);
+            playBtn.setImageResource(t != null && t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        }
 
         if (t != null && t.art != null) {
             art.setPadding(0, 0, 0, 0);
@@ -823,6 +832,15 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
         handler.post(periodic);
         if (Profile.isNwd(this)) handler.post(radioPoll);
+        if (NowPlaying.isNotificationListenerEnabled(this)) {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    android.service.notification.NotificationListenerService.requestRebind(
+                            new android.content.ComponentName(this, MediaListener.class));
+                }
+            } catch (Throwable ignored) {}
+        }
+        nowPlaying.refreshSessions();
         nowPlaying.addListener(this);
         onNowPlayingChanged();
     }

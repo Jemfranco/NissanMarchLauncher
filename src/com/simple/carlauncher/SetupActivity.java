@@ -302,9 +302,8 @@ public class SetupActivity extends Activity {
         homeBtn.setText(check(isHome) + "Usar como pantalla de inicio");
         locationBtn.setText(check(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) + "Ubicación (para el clima)");
-        String listeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
-        notifBtn.setText(check(listeners != null && listeners.contains(getPackageName()))
-                + "Ver la música de otras apps");
+        notifBtn.setText(check(NowPlaying.isNotificationListenerEnabled(this))
+                + "Ver la música de otras apps (Spotify, etc.)");
         if (overlayBtn != null) {
             overlayBtn.setText(check(Settings.canDrawOverlays(this)) + "Aviso de volumen");
         }
