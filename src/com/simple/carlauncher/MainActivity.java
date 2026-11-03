@@ -4,9 +4,12 @@ import android.Manifest;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.BatteryManager;
+import android.text.TextUtils;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.SeekBar;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -63,16 +66,33 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private WebView mapWebView;
     private WaveVisualizerView musicCardVisualizer;
     private LocationManager locManager;
+    private Location lastLoc;
     private final LocationListener locListener = new LocationListener() {
         @Override
         public void onLocationChanged(Location loc) {
-            if (mapWebView != null && loc != null) {
-                final double lat = loc.getLatitude();
-                final double lng = loc.getLongitude();
-                handler.post(() -> {
-                    mapWebView.evaluateJavascript("if (window.setPos) setPos(" + lat + "," + lng + ");", null);
-                });
+            if (loc == null) return;
+            float kmh = loc.hasSpeed() ? loc.getSpeed() * 3.6f : 0f;
+            if (lastLoc != null && (!loc.hasSpeed() || kmh <= 0.5f)) {
+                float dist = lastLoc.distanceTo(loc);
+                float dt = Math.max(0.5f, (loc.getTime() - lastLoc.getTime()) / 1000f);
+                if (dt < 10f) {
+                    float calc = (dist / dt) * 3.6f;
+                    if (calc >= 2f && calc <= 200f) kmh = calc;
+                }
             }
+            lastLoc = loc;
+
+            final float finalKmh = kmh;
+            final double lat = loc.getLatitude();
+            final double lng = loc.getLongitude();
+
+            handler.post(() -> {
+                if (speedometerView != null) speedometerView.setSpeed(finalKmh);
+                if (driveRoadView != null) driveRoadView.setSpeed(finalKmh);
+                if (mapWebView != null) {
+                    mapWebView.evaluateJavascript("if (window.setPos) setPos(" + lat + "," + lng + ");", null);
+                }
+            });
         }
         @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
         @Override public void onProviderEnabled(String provider) {}
@@ -189,29 +209,65 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private ImageView art, playBtn;
     private TextView songSource, songTitle, songArtist;
 
+    // Vista de Manejo (Cockpit Mode)
+    private boolean isDriveViewMode = true;
+    private DriveRoadView driveRoadView;
+    private ArcSpeedometerView speedometerView;
+
+    // Cockpit Music Card Views
+    private ImageView cockpitArt;
+    private TextView cockpitTitle, cockpitArtist, cockpitFav;
+    private TextView cockpitTimeCurrent, cockpitTimeTotal;
+    private SeekBar cockpitSeekBar;
+    private ImageView cockpitShuffleBtn, cockpitRepeatBtn, cockpitPlayIcon;
+    private View cockpitPlayBtn;
+    private boolean isUserScrubbing = false;
+    private boolean isFavoriteTrack = false;
+    private TextView statusTemp;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        isDriveViewMode = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+                .getBoolean("drive_view_mode", true);
+
         boolean compact = isCompact();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(compact ? 10 : 16), dp(compact ? 6 : 14), dp(compact ? 10 : 16), dp(compact ? 2 : 4));
+        root.setPadding(dp(compact ? 8 : 14), dp(compact ? 4 : 8), dp(compact ? 8 : 14), dp(compact ? 2 : 4));
         root.setBackground(Ui.background(this));
 
+        // Barra superior estilo cabina (Batería, Reloj y Clima)
+        root.addView(buildStatusBar(compact), new LinearLayout.LayoutParams(-1, -2));
+
         LinearLayout cards = new LinearLayout(this);
-        cards.addView(buildMapCard(compact), weight(1.25f, 0));
+        if (isDriveViewMode) {
+            // Columna Izquierda: Vista de Conducción (Carretera + Nissan March 2015 + Reloj/Aceite)
+            driveRoadView = new DriveRoadView(this);
+            cards.addView(driveRoadView, weight(1.15f, 0));
 
-        LinearLayout middle = new LinearLayout(this);
-        middle.setOrientation(LinearLayout.VERTICAL);
-        middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
-        middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
-        cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
+            // Columna Derecha: Velocímetro arriba + Control de Música abajo
+            LinearLayout rightCol = new LinearLayout(this);
+            rightCol.setOrientation(LinearLayout.VERTICAL);
+            rightCol.addView(buildSpeedometerCard(compact), vweight(1.08f, 0));
+            rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
+            cards.addView(rightCol, weight(1.28f, dp(compact ? 8 : 12)));
+        } else {
+            // Modo clásico: Mapa + Reloj/Carro + Música
+            cards.addView(buildMapCard(compact), weight(1.25f, 0));
 
-        cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
+            LinearLayout middle = new LinearLayout(this);
+            middle.setOrientation(LinearLayout.VERTICAL);
+            middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
+            middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
+            cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
+
+            cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
+        }
         root.addView(cards, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        root.addView(buildDock(compact), new LinearLayout.LayoutParams(-1, dp(compact ? 60 : 84)));
+        root.addView(buildDock(compact), new LinearLayout.LayoutParams(-1, dp(compact ? 56 : 74)));
         setContentView(root);
 
         radio.bind(this);
@@ -226,6 +282,305 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         if (Profile.isNwd(this)) startService(new Intent(this, VolumeOverlay.class));
         startService(new Intent(this, GreeterService.class));
         startService(new Intent(this, Odometer.class));
+    }
+
+    private void toggleViewMode() {
+        isDriveViewMode = !isDriveViewMode;
+        getSharedPreferences("launcher_prefs", MODE_PRIVATE).edit()
+                .putBoolean("drive_view_mode", isDriveViewMode).apply();
+        recreate();
+    }
+
+    private String formatTime(long ms) {
+        if (ms < 0) return "0:00";
+        long sec = ms / 1000;
+        long min = sec / 60;
+        sec = sec % 60;
+        return min + ":" + (sec < 10 ? "0" : "") + sec;
+    }
+
+    private final Runnable timeUpdater = new Runnable() {
+        @Override
+        public void run() {
+            if (nowPlaying != null) {
+                long dur = nowPlaying.getDuration();
+                long pos = nowPlaying.getPosition();
+                if (dur > 0 && cockpitTimeTotal != null) {
+                    cockpitTimeTotal.setText(formatTime(dur));
+                    if (cockpitSeekBar != null && !isUserScrubbing) {
+                        cockpitSeekBar.setMax((int) (dur / 1000));
+                    }
+                }
+                if (pos >= 0 && cockpitTimeCurrent != null && !isUserScrubbing) {
+                    cockpitTimeCurrent.setText(formatTime(pos));
+                    if (cockpitSeekBar != null && !isUserScrubbing) {
+                        cockpitSeekBar.setProgress((int) (pos / 1000));
+                    }
+                }
+            }
+            handler.postDelayed(this, 1000);
+        }
+    };
+
+    private void toggleFavoriteTrack() {
+        isFavoriteTrack = !isFavoriteTrack;
+        if (cockpitFav != null) {
+            cockpitFav.setText(isFavoriteTrack ? "♥" : "♡");
+            cockpitFav.setTextColor(isFavoriteTrack ? 0xFFFF4081 : 0xCCFFFFFF);
+        }
+        toast(isFavoriteTrack ? "Canción añadida a favoritos ♥" : "Eliminada de favoritos");
+    }
+
+    private void updatePlaybackModesUi() {
+        if (nowPlaying == null) return;
+        int shuffle = nowPlaying.getShuffleMode();
+        int repeat = nowPlaying.getRepeatMode();
+        if (cockpitShuffleBtn != null) {
+            cockpitShuffleBtn.setColorFilter(shuffle != 0 ? 0xFF00E5FF : 0x88FFFFFF);
+        }
+        if (cockpitRepeatBtn != null) {
+            cockpitRepeatBtn.setColorFilter(repeat != 0 ? 0xFF00E5FF : 0x88FFFFFF);
+        }
+    }
+
+    private View buildStatusBar(boolean compact) {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(compact ? 12 : 18), 0, dp(compact ? 12 : 18), dp(compact ? 2 : 4));
+
+        TextView leftStatus = Ui.text(this, "73 % 🔋", compact ? 11 : 12, 0xCCFFFFFF);
+        leftStatus.setTypeface(Typeface.DEFAULT_BOLD);
+        bar.addView(leftStatus);
+
+        View spacer1 = new View(this);
+        bar.addView(spacer1, new LinearLayout.LayoutParams(0, 1, 1f));
+
+        LinearLayout centerGroup = new LinearLayout(this);
+        centerGroup.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView phoneIcon = new ImageView(this);
+        phoneIcon.setImageResource(R.drawable.ic_phone);
+        phoneIcon.setColorFilter(0x88FFFFFF);
+        centerGroup.addView(phoneIcon, new LinearLayout.LayoutParams(dp(compact ? 12 : 14), dp(compact ? 12 : 14)));
+
+        TextClock barClock = new TextClock(this);
+        barClock.setFormat24Hour("HH:mm");
+        barClock.setFormat12Hour("hh:mm");
+        barClock.setTextSize(compact ? 12 : 13);
+        barClock.setTextColor(0xDDFFFFFF);
+        barClock.setTypeface(Typeface.DEFAULT_BOLD);
+        barClock.setPadding(dp(6), 0, 0, 0);
+        centerGroup.addView(barClock);
+        bar.addView(centerGroup);
+
+        View spacer2 = new View(this);
+        bar.addView(spacer2, new LinearLayout.LayoutParams(0, 1, 1f));
+
+        statusTemp = Ui.text(this, "21°C", compact ? 11 : 12, 0xCCFFFFFF);
+        statusTemp.setTypeface(Typeface.DEFAULT_BOLD);
+        bar.addView(statusTemp);
+
+        return bar;
+    }
+
+    private View buildSpeedometerCard(boolean compact) {
+        FrameLayout card = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xD90D1220);
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), 0x3300E5FF);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+
+        speedometerView = new ArcSpeedometerView(this);
+        card.addView(speedometerView, new FrameLayout.LayoutParams(-1, -1));
+        return card;
+    }
+
+    private View buildCockpitMusicCard(boolean compact) {
+        FrameLayout card = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xD90D1220);
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), 0x3300E5FF);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(compact ? 14 : 18), dp(compact ? 10 : 12), dp(compact ? 14 : 18), dp(compact ? 8 : 12));
+
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        cockpitArt = new ImageView(this);
+        cockpitArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        int artSize = dp(compact ? 52 : 62);
+        GradientDrawable artBg = new GradientDrawable();
+        artBg.setColor(0x26FFFFFF);
+        artBg.setCornerRadius(dp(12));
+        cockpitArt.setBackground(artBg);
+        cockpitArt.setClipToOutline(true);
+        cockpitArt.setImageResource(R.drawable.ic_music);
+        topRow.addView(cockpitArt, new LinearLayout.LayoutParams(artSize, artSize));
+
+        LinearLayout infoCol = new LinearLayout(this);
+        infoCol.setOrientation(LinearLayout.VERTICAL);
+        infoCol.setPadding(dp(compact ? 10 : 14), 0, dp(8), 0);
+
+        cockpitTitle = Ui.text(this, "Vida Bonita", compact ? 16 : 18, Color.WHITE);
+        cockpitTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        cockpitTitle.setSingleLine(true);
+        cockpitTitle.setEllipsize(TextUtils.TruncateAt.END);
+        infoCol.addView(cockpitTitle);
+
+        cockpitArtist = Ui.text(this, "Carlos Vives", compact ? 12 : 13, 0xB3FFFFFF);
+        cockpitArtist.setSingleLine(true);
+        cockpitArtist.setEllipsize(TextUtils.TruncateAt.END);
+        cockpitArtist.setPadding(0, dp(2), 0, 0);
+        infoCol.addView(cockpitArtist);
+
+        topRow.addView(infoCol, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        cockpitFav = Ui.text(this, "♡", compact ? 20 : 24, 0xCCFFFFFF);
+        cockpitFav.setPadding(dp(8), dp(4), dp(8), dp(4));
+        Ui.pressable(cockpitFav, 0.85f);
+        cockpitFav.setOnClickListener(v -> toggleFavoriteTrack());
+        topRow.addView(cockpitFav, new LinearLayout.LayoutParams(-2, -2));
+
+        content.addView(topRow, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout seekRow = new LinearLayout(this);
+        seekRow.setOrientation(LinearLayout.HORIZONTAL);
+        seekRow.setGravity(Gravity.CENTER_VERTICAL);
+        seekRow.setPadding(0, dp(compact ? 4 : 6), 0, dp(compact ? 2 : 4));
+
+        cockpitTimeCurrent = Ui.text(this, "1:24", compact ? 10 : 11, 0x99FFFFFF);
+        seekRow.addView(cockpitTimeCurrent, new LinearLayout.LayoutParams(-2, -2));
+
+        cockpitSeekBar = createStyledSeekBar();
+        LinearLayout.LayoutParams skLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        skLp.setMargins(dp(6), 0, dp(6), 0);
+        seekRow.addView(cockpitSeekBar, skLp);
+
+        cockpitTimeTotal = Ui.text(this, "3:56", compact ? 10 : 11, 0x99FFFFFF);
+        seekRow.addView(cockpitTimeTotal, new LinearLayout.LayoutParams(-2, -2));
+
+        content.addView(seekRow, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout controlsRow = new LinearLayout(this);
+        controlsRow.setOrientation(LinearLayout.HORIZONTAL);
+        controlsRow.setGravity(Gravity.CENTER);
+        controlsRow.setPadding(0, dp(compact ? 2 : 4), 0, 0);
+
+        View shuffleView = Ui.iconButton(this, R.drawable.ic_shuffle, compact ? 34 : 40, false, () -> {
+            nowPlaying.toggleShuffle();
+            updatePlaybackModesUi();
+        });
+        if (shuffleView instanceof ImageView) cockpitShuffleBtn = (ImageView) shuffleView;
+        controlsRow.addView(shuffleView, new LinearLayout.LayoutParams(dp(compact ? 34 : 40), dp(compact ? 34 : 40)));
+
+        View prevBtn = Ui.iconButton(this, R.drawable.ic_prev, compact ? 40 : 46, false, () -> nowPlaying.skip(false));
+        LinearLayout.LayoutParams prevLp = new LinearLayout.LayoutParams(dp(compact ? 40 : 46), dp(compact ? 40 : 46));
+        prevLp.setMargins(dp(compact ? 12 : 18), 0, dp(compact ? 12 : 18), 0);
+        controlsRow.addView(prevBtn, prevLp);
+
+        cockpitPlayBtn = createGlowingPlayButton(compact);
+        controlsRow.addView(cockpitPlayBtn, new LinearLayout.LayoutParams(dp(compact ? 50 : 58), dp(compact ? 50 : 58)));
+
+        View nextBtn = Ui.iconButton(this, R.drawable.ic_next, compact ? 40 : 46, false, () -> nowPlaying.skip(true));
+        LinearLayout.LayoutParams nextLp = new LinearLayout.LayoutParams(dp(compact ? 40 : 46), dp(compact ? 40 : 46));
+        nextLp.setMargins(dp(compact ? 12 : 18), 0, dp(compact ? 12 : 18), 0);
+        controlsRow.addView(nextBtn, nextLp);
+
+        View repeatView = Ui.iconButton(this, R.drawable.ic_repeat, compact ? 34 : 40, false, () -> {
+            nowPlaying.toggleRepeat();
+            updatePlaybackModesUi();
+        });
+        if (repeatView instanceof ImageView) cockpitRepeatBtn = (ImageView) repeatView;
+        controlsRow.addView(repeatView, new LinearLayout.LayoutParams(dp(compact ? 34 : 40), dp(compact ? 34 : 40)));
+
+        content.addView(controlsRow, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        card.addView(content, new FrameLayout.LayoutParams(-1, -1));
+        return card;
+    }
+
+    private SeekBar createStyledSeekBar() {
+        SeekBar sb = new SeekBar(this);
+        sb.setMax(100);
+        sb.setProgress(35);
+        sb.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x33FFFFFF);
+        bg.setCornerRadius(dp(3));
+
+        GradientDrawable prog = new GradientDrawable();
+        prog.setColor(0xFF00E5FF);
+        prog.setCornerRadius(dp(3));
+
+        android.graphics.drawable.ClipDrawable clipProg = new android.graphics.drawable.ClipDrawable(
+                prog, Gravity.START, android.graphics.drawable.ClipDrawable.HORIZONTAL);
+
+        android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(
+                new android.graphics.drawable.Drawable[]{bg, clipProg});
+        layer.setId(0, android.R.id.background);
+        layer.setId(1, android.R.id.progress);
+        sb.setProgressDrawable(layer);
+
+        GradientDrawable thumb = new GradientDrawable();
+        thumb.setShape(GradientDrawable.OVAL);
+        thumb.setColor(Color.WHITE);
+        thumb.setSize(dp(16), dp(16));
+        thumb.setStroke(dp(2), 0xFF00E5FF);
+        sb.setThumb(thumb);
+
+        sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser && cockpitTimeCurrent != null) {
+                    cockpitTimeCurrent.setText(formatTime(progress * 1000L));
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                isUserScrubbing = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                isUserScrubbing = false;
+                if (nowPlaying != null) {
+                    nowPlaying.seekTo(seekBar.getProgress() * 1000L);
+                }
+            }
+        });
+        return sb;
+    }
+
+    private View createGlowingPlayButton(boolean compact) {
+        FrameLayout btn = new FrameLayout(this);
+        int size = dp(compact ? 50 : 58);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(0x2200E5FF);
+        bg.setStroke(dp(2), 0xFF00E5FF);
+        btn.setBackground(bg);
+
+        cockpitPlayIcon = new ImageView(this);
+        cockpitPlayIcon.setImageResource(R.drawable.ic_play);
+        cockpitPlayIcon.setColorFilter(Color.WHITE);
+        int iconSize = dp(compact ? 26 : 30);
+        FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER);
+        btn.addView(cockpitPlayIcon, ilp);
+
+        Ui.pressable(btn, 0.88f);
+        btn.setOnClickListener(v -> nowPlaying.playPause());
+        return btn;
     }
 
     // ---------- Greeting + weather ----------
@@ -818,6 +1173,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void updateOil() {
+        if (driveRoadView != null) driveRoadView.updateOil();
+        if (oilInfo == null || oilBg == null) return;
         if (!Odometer.isConfigured(this)) {
             oilInfo.setText("Aceite: configurar");
             oilBg.setColor(0x26FFFFFF);
@@ -1045,6 +1402,36 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             art.setColorFilter(Color.WHITE);
             art.setAlpha(0.20f);
         }
+
+        // Actualización de la tarjeta de música estilo Cockpit
+        if (cockpitTitle != null) {
+            cockpitTitle.setText(empty ? "Vida Bonita" : t.title);
+        }
+        if (cockpitArtist != null) {
+            cockpitArtist.setText(empty ? "Carlos Vives" : t.artist);
+        }
+        if (cockpitPlayIcon != null) {
+            cockpitPlayIcon.setImageResource(t != null && t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        }
+        if (cockpitArt != null) {
+            if (t != null && t.art != null) {
+                cockpitArt.setImageBitmap(t.art);
+                cockpitArt.clearColorFilter();
+            } else {
+                cockpitArt.setImageResource(s == NowPlaying.Source.BT ? R.drawable.ic_bluetooth : R.drawable.ic_music);
+                cockpitArt.setColorFilter(0x88FFFFFF);
+            }
+        }
+        if (cockpitTimeTotal != null) {
+            long dur = nowPlaying.getDuration();
+            if (dur > 0) {
+                cockpitTimeTotal.setText(formatTime(dur));
+                if (cockpitSeekBar != null && !isUserScrubbing) {
+                    cockpitSeekBar.setMax((int) (dur / 1000));
+                }
+            }
+        }
+        updatePlaybackModesUi();
     }
 
     // ---------- Dock ----------
@@ -1052,7 +1439,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View buildDock(boolean compact) {
         LinearLayout dock = new LinearLayout(this);
         dock.setGravity(Gravity.CENTER_VERTICAL);
-        dock.addView(dockIcon(R.drawable.ic_compass, this::openMaps, compact), weight(1f, 0));
+        dock.addView(dockIcon(isDriveViewMode ? R.drawable.ic_compass : R.drawable.ic_car,
+                this::toggleViewMode, () -> openWaze(), compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio, compact), weight(1f, 0));
 
@@ -1266,23 +1654,26 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         handler.post(lightPoll);
         lightsOn = hasLightsImage && carLightsOn();
         android.util.Log.d("CarLights", "onResume lights=" + lightsOn);
-        carLights.setAlpha(lightsOn ? 1f : 0f);
-        car.setAlpha(lightsOn ? 0f : 1f);
+        if (hasLightsImage && carLights != null && car != null) {
+            carLights.setAlpha(lightsOn ? 1f : 0f);
+            car.setAlpha(lightsOn ? 0f : 1f);
+        }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             if (locManager == null) locManager = (LocationManager) getSystemService(LOCATION_SERVICE);
             try {
-                locManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 10, locListener);
-                locManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 10, locListener);
+                locManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 1, locListener);
+                locManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000, 5, locListener);
                 Location lastGps = locManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                 Location lastNet = locManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
                 Location best = lastGps != null ? lastGps : lastNet;
-                if (best != null && mapWebView != null) {
+                if (best != null) {
                     locListener.onLocationChanged(best);
                 }
             } catch (Exception ignored) {}
         } else {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
+        handler.post(timeUpdater);
         handler.post(periodic);
         if (Profile.isNwd(this)) handler.post(radioPoll);
         if (NowPlaying.isNotificationListenerEnabled(this)) {
@@ -1302,6 +1693,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     @Override
     protected void onPause() {
         super.onPause();
+        handler.removeCallbacks(timeUpdater);
         if (musicCardVisualizer != null) musicCardVisualizer.stopAnimation();
         if (locManager != null) locManager.removeUpdates(locListener);
         unregisterReceiver(illReceiver);
