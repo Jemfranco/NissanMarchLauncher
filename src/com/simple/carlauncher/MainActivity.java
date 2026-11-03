@@ -210,6 +210,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private TextView songSource, songTitle, songArtist;
 
     // Vista de Manejo (Cockpit Mode)
+    private boolean isDriveViewMode = true;
     private DriveRoadView driveRoadView;
     private ArcSpeedometerView speedometerView;
 
@@ -227,6 +228,9 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        isDriveViewMode = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+                .getBoolean("drive_view_mode", true);
+
         boolean compact = isCompact();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -234,16 +238,29 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         root.setBackground(Ui.background(this));
 
         LinearLayout cards = new LinearLayout(this);
-        // Columna Izquierda: Vista de Conducción ocupando toda la altura
-        driveRoadView = new DriveRoadView(this);
-        cards.addView(driveRoadView, weight(1.15f, 0));
+        if (isDriveViewMode) {
+            // Columna Izquierda: Vista de Conducción (Carretera + Nissan March 2015 + Reloj/Aceite)
+            driveRoadView = new DriveRoadView(this);
+            cards.addView(driveRoadView, weight(1.15f, 0));
 
-        // Columna Derecha: Velocímetro arriba + Control de Música abajo ocupando toda la altura
-        LinearLayout rightCol = new LinearLayout(this);
-        rightCol.setOrientation(LinearLayout.VERTICAL);
-        rightCol.addView(buildSpeedometerCard(compact), vweight(1.12f, 0));
-        rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
-        cards.addView(rightCol, weight(1.25f, dp(compact ? 8 : 12)));
+            // Columna Derecha: Velocímetro arriba + Control de Música abajo
+            LinearLayout rightCol = new LinearLayout(this);
+            rightCol.setOrientation(LinearLayout.VERTICAL);
+            rightCol.addView(buildSpeedometerCard(compact), vweight(1.12f, 0));
+            rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
+            cards.addView(rightCol, weight(1.25f, dp(compact ? 8 : 12)));
+        } else {
+            // Modo clásico: Mapa + Reloj/Carro + Música
+            cards.addView(buildMapCard(compact), weight(1.25f, 0));
+
+            LinearLayout middle = new LinearLayout(this);
+            middle.setOrientation(LinearLayout.VERTICAL);
+            middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
+            middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
+            cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
+
+            cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
+        }
 
         root.addView(cards, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -262,6 +279,13 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         if (Profile.isNwd(this)) startService(new Intent(this, VolumeOverlay.class));
         startService(new Intent(this, GreeterService.class));
         startService(new Intent(this, Odometer.class));
+    }
+
+    private void toggleViewMode() {
+        isDriveViewMode = !isDriveViewMode;
+        getSharedPreferences("launcher_prefs", MODE_PRIVATE).edit()
+                .putBoolean("drive_view_mode", isDriveViewMode).apply();
+        recreate();
     }
 
     private String formatTime(long ms) {
@@ -1372,7 +1396,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View buildDock(boolean compact) {
         LinearLayout dock = new LinearLayout(this);
         dock.setGravity(Gravity.CENTER_VERTICAL);
-        dock.addView(dockIcon(R.drawable.ic_compass, this::openWaze, compact), weight(1f, 0));
+        dock.addView(dockIcon(isDriveViewMode ? R.drawable.ic_compass : R.drawable.ic_car,
+                this::toggleViewMode, () -> openWaze(), compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio, compact), weight(1f, 0));
 
