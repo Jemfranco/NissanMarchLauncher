@@ -189,3 +189,4 @@ public class ArcSpeedometerView extends View {
         canvas.drawPath(rightWing, wingPaint);
     }
 }
+

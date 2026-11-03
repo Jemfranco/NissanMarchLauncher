@@ -210,7 +210,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private TextView songSource, songTitle, songArtist;
 
     // Vista de Manejo (Cockpit Mode)
-    private boolean isDriveViewMode = true;
     private DriveRoadView driveRoadView;
     private ArcSpeedometerView speedometerView;
 
@@ -223,48 +222,29 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View cockpitPlayBtn;
     private boolean isUserScrubbing = false;
     private boolean isFavoriteTrack = false;
-    private TextView statusTemp;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        isDriveViewMode = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
-                .getBoolean("drive_view_mode", true);
-
         boolean compact = isCompact();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(compact ? 8 : 14), dp(compact ? 4 : 8), dp(compact ? 8 : 14), dp(compact ? 2 : 4));
+        root.setPadding(dp(compact ? 8 : 12), dp(compact ? 6 : 8), dp(compact ? 8 : 12), dp(compact ? 2 : 4));
         root.setBackground(Ui.background(this));
 
-        // Barra superior estilo cabina (Batería, Reloj y Clima)
-        root.addView(buildStatusBar(compact), new LinearLayout.LayoutParams(-1, -2));
-
         LinearLayout cards = new LinearLayout(this);
-        if (isDriveViewMode) {
-            // Columna Izquierda: Vista de Conducción (Carretera + Nissan March 2015 + Reloj/Aceite)
-            driveRoadView = new DriveRoadView(this);
-            cards.addView(driveRoadView, weight(1.15f, 0));
+        // Columna Izquierda: Vista de Conducción ocupando toda la altura
+        driveRoadView = new DriveRoadView(this);
+        cards.addView(driveRoadView, weight(1.15f, 0));
 
-            // Columna Derecha: Velocímetro arriba + Control de Música abajo
-            LinearLayout rightCol = new LinearLayout(this);
-            rightCol.setOrientation(LinearLayout.VERTICAL);
-            rightCol.addView(buildSpeedometerCard(compact), vweight(1.08f, 0));
-            rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
-            cards.addView(rightCol, weight(1.28f, dp(compact ? 8 : 12)));
-        } else {
-            // Modo clásico: Mapa + Reloj/Carro + Música
-            cards.addView(buildMapCard(compact), weight(1.25f, 0));
+        // Columna Derecha: Velocímetro arriba + Control de Música abajo ocupando toda la altura
+        LinearLayout rightCol = new LinearLayout(this);
+        rightCol.setOrientation(LinearLayout.VERTICAL);
+        rightCol.addView(buildSpeedometerCard(compact), vweight(1.12f, 0));
+        rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
+        cards.addView(rightCol, weight(1.25f, dp(compact ? 8 : 12)));
 
-            LinearLayout middle = new LinearLayout(this);
-            middle.setOrientation(LinearLayout.VERTICAL);
-            middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
-            middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
-            cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
-
-            cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
-        }
         root.addView(cards, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(buildDock(compact), new LinearLayout.LayoutParams(-1, dp(compact ? 56 : 74)));
@@ -282,13 +262,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         if (Profile.isNwd(this)) startService(new Intent(this, VolumeOverlay.class));
         startService(new Intent(this, GreeterService.class));
         startService(new Intent(this, Odometer.class));
-    }
-
-    private void toggleViewMode() {
-        isDriveViewMode = !isDriveViewMode;
-        getSharedPreferences("launcher_prefs", MODE_PRIVATE).edit()
-                .putBoolean("drive_view_mode", isDriveViewMode).apply();
-        recreate();
     }
 
     private String formatTime(long ms) {
@@ -341,46 +314,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         if (cockpitRepeatBtn != null) {
             cockpitRepeatBtn.setColorFilter(repeat != 0 ? 0xFF00E5FF : 0x88FFFFFF);
         }
-    }
-
-    private View buildStatusBar(boolean compact) {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(compact ? 12 : 18), 0, dp(compact ? 12 : 18), dp(compact ? 2 : 4));
-
-        TextView leftStatus = Ui.text(this, "73 % 🔋", compact ? 11 : 12, 0xCCFFFFFF);
-        leftStatus.setTypeface(Typeface.DEFAULT_BOLD);
-        bar.addView(leftStatus);
-
-        View spacer1 = new View(this);
-        bar.addView(spacer1, new LinearLayout.LayoutParams(0, 1, 1f));
-
-        LinearLayout centerGroup = new LinearLayout(this);
-        centerGroup.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView phoneIcon = new ImageView(this);
-        phoneIcon.setImageResource(R.drawable.ic_phone);
-        phoneIcon.setColorFilter(0x88FFFFFF);
-        centerGroup.addView(phoneIcon, new LinearLayout.LayoutParams(dp(compact ? 12 : 14), dp(compact ? 12 : 14)));
-
-        TextClock barClock = new TextClock(this);
-        barClock.setFormat24Hour("HH:mm");
-        barClock.setFormat12Hour("hh:mm");
-        barClock.setTextSize(compact ? 12 : 13);
-        barClock.setTextColor(0xDDFFFFFF);
-        barClock.setTypeface(Typeface.DEFAULT_BOLD);
-        barClock.setPadding(dp(6), 0, 0, 0);
-        centerGroup.addView(barClock);
-        bar.addView(centerGroup);
-
-        View spacer2 = new View(this);
-        bar.addView(spacer2, new LinearLayout.LayoutParams(0, 1, 1f));
-
-        statusTemp = Ui.text(this, "21°C", compact ? 11 : 12, 0xCCFFFFFF);
-        statusTemp.setTypeface(Typeface.DEFAULT_BOLD);
-        bar.addView(statusTemp);
-
-        return bar;
     }
 
     private View buildSpeedometerCard(boolean compact) {
@@ -1439,8 +1372,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private View buildDock(boolean compact) {
         LinearLayout dock = new LinearLayout(this);
         dock.setGravity(Gravity.CENTER_VERTICAL);
-        dock.addView(dockIcon(isDriveViewMode ? R.drawable.ic_compass : R.drawable.ic_car,
-                this::toggleViewMode, () -> openWaze(), compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_compass, this::openWaze, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio, compact), weight(1f, 0));
 

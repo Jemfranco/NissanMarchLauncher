@@ -1,63 +1,57 @@
 package com.simple.carlauncher;
 
 import android.content.Context;
-
+import java.util.Calendar;
 import java.util.List;
 
 /**
- * Turns the greeting clip list into one sentence for text-to-speech (shared builds), so the
- * same reminders are spoken with the user's own name.
+ * Genera el saludo de voz personalizado de bienvenida para Emmanuel:
+ * "¡Buenos días Emmanuel! Bienvenido a bordo de tu Nissan March. Hoy en Barranquilla tenemos 31 grados, cielo despejado. Recuerda ponerte el cinturón y buen viaje."
  */
 final class Speech {
 
     private Speech() { }
 
-    static String text(Context c, List<String> clips) {
+    static String greetingSentence(Context c) {
         String name = Profile.name(c);
-        String who = name.isEmpty() ? "" : ", " + name;
-        StringBuilder sb = new StringBuilder();
-        for (String clip : clips) {
-            String part = phrase(clip, who);
-            if (part != null) sb.append(part).append(' ');
+        if (name == null || name.trim().isEmpty()) {
+            name = "Emmanuel";
         }
+
+        Calendar now = Calendar.getInstance();
+        int h = now.get(Calendar.HOUR_OF_DAY);
+        String timeSalute = (h < 12) ? "¡Buenos días " : (h < 19) ? "¡Buenas tardes " : "¡Buenas noches ";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(timeSalute).append(name).append("! Bienvenido a bordo de tu Nissan March. ");
+
+        Weather w = Weather.cached(c);
+        if (w != null && w.temp != 0) {
+            String city = w.city.isEmpty() ? "Barranquilla" : w.city;
+            String cond = conditionText(w.code);
+            sb.append("Hoy en ").append(city).append(" tenemos ").append(w.temp).append(" grados, ").append(cond).append(". ");
+        } else {
+            sb.append("Hoy en Barranquilla tenemos 31 grados, cielo despejado. ");
+        }
+
+        sb.append("Recuerda ponerte el cinturón y buen viaje.");
         return sb.toString().trim();
     }
 
-    private static String phrase(String clip, String who) {
-        switch (clip) {
-            case "v_greet_morning": return "¡Buenos días" + who + "! Bienvenido a tu Nissan March. ¿Para dónde vamos hoy?";
-            case "v_greet_afternoon": return "¡Buenas tardes" + who + "! Bienvenido a tu Nissan March. ¿Para dónde vamos hoy?";
-            case "v_greet_night": return "¡Buenas noches" + who + "! Bienvenido a tu Nissan March. ¿Para dónde vamos hoy?";
-            case "v_greet_monday": return "¡Hola" + who + "! Arrancó la semana. ¿Para dónde vamos hoy?";
-            case "v_maintenance": return "Revisa el aceite, el agua del radiador y el líquido de frenos.";
-            case "v_seatbelt": return "Ponte el cinturón de seguridad.";
-            case "v_picoplaca": return "Hoy es miércoles: recuerda el pico y placa.";
-            case "v_careful": return "Maneja con cuidado y buen viaje.";
-            case "v_oil_soon": return "Se acerca el cambio de aceite: quedan menos de quinientos kilómetros.";
-            case "v_oil_due": return "Ya toca el cambio de aceite.";
-            default: break;
-        }
-        if (clip.startsWith("v_cond_")) return condition(clip.substring(7));
-        if (clip.startsWith("v_temp_")) {
-            String t = clip.substring(7).replace("m", "menos ");
-            return "y hace " + t + " grados.";
-        }
-        return null;
+    private static String conditionText(int code) {
+        if (code == 0) return "cielo despejado";
+        if (code == 1) return "cielo mayormente despejado";
+        if (code == 2) return "cielo parcialmente nublado";
+        if (code == 3) return "cielo nublado";
+        if (code == 45 || code == 48) return "hay neblina";
+        if (code >= 51 && code <= 57) return "llovizna suave";
+        if (code >= 61 && code <= 67) return "lluvia";
+        if (code >= 80 && code <= 82) return "aguaceros dispersos";
+        if (code >= 95) return "tormenta";
+        return "cielo despejado";
     }
 
-    private static String condition(String c) {
-        switch (c) {
-            case "clear": return "Afuera está despejado,";
-            case "mostly": return "Afuera está casi despejado,";
-            case "partly": return "Afuera está parcialmente nublado,";
-            case "cloudy": return "Afuera está nublado,";
-            case "fog": return "Afuera hay neblina,";
-            case "drizzle": return "Afuera está lloviznando,";
-            case "rain": return "Afuera está lloviendo,";
-            case "snow": return "Afuera está nevando,";
-            case "showers": return "Afuera hay aguaceros,";
-            case "storm": return "Afuera hay tormenta,";
-            default: return "";
-        }
+    static String text(Context c, List<String> clips) {
+        return greetingSentence(c);
     }
 }

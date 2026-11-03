@@ -44,6 +44,10 @@ public class DriveRoadView extends FrameLayout {
 
         // Fondo y superficie interactiva de carretera + carro
         roadSurface = new RoadSurfaceView(context);
+        roadSurface.setOnClickListener(v -> {
+            context.sendBroadcast(new android.content.Intent("com.simple.carlauncher.TEST_CAR_ON"));
+            android.widget.Toast.makeText(context, "🎙️ Saludo de bienvenida activado", android.widget.Toast.LENGTH_SHORT).show();
+        });
         addView(roadSurface, new FrameLayout.LayoutParams(-1, -1));
 
         // Tarjeta flotante de Reloj + Aceite en la parte inferior
@@ -418,3 +422,4 @@ public class DriveRoadView extends FrameLayout {
         }
     }
 }
+

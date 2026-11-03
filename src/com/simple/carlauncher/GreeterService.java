@@ -92,10 +92,16 @@ public class GreeterService extends Service {
                 if (state == 3) onCarOff();
                 else if (state == 1) onCarOn();
             } else if ("com.xyauto.intent.action.ACC_ON".equals(a)
+                    || "com.xyauto.broadcast.ACC_CHANGED".equals(a)
                     || Intent.ACTION_SCREEN_ON.equals(a)
                     || Intent.ACTION_USER_PRESENT.equals(a)
                     || "com.simple.carlauncher.TEST_CAR_ON".equals(a)) {
-                onCarOn();
+                if ("com.simple.carlauncher.TEST_CAR_ON".equals(a)) {
+                    handler.removeCallbacks(greet);
+                    handler.postDelayed(greet, 300);
+                } else {
+                    onCarOn();
+                }
             } else if ("com.bt.ACTION_BT_MUSIC_PAUSE".equals(a)) {
                 btPlaying = false;
             } else if ("com.bt.ACTION_BT_MUSIC_PLAY".equals(a)) {
@@ -180,18 +186,44 @@ public class GreeterService extends Service {
     };
 
     private android.speech.tts.TextToSpeech tts;
+    private boolean ttsReady = false;
+
+    private void initTts() {
+        if (tts != null) return;
+        try {
+            tts = new android.speech.tts.TextToSpeech(getApplicationContext(), status -> {
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    ttsReady = true;
+                    java.util.Locale es = new java.util.Locale("es", "CO");
+                    if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es", "US");
+                    if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es");
+                    tts.setLanguage(es);
+                    try {
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build());
+                    } catch (Throwable ignored) {}
+                }
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "TTS init error", t);
+        }
+    }
 
     private void speakTts(String text) {
-        if (tts != null) tts.shutdown();
-        tts = new android.speech.tts.TextToSpeech(this, status -> {
-            if (status != android.speech.tts.TextToSpeech.SUCCESS) return;
-            java.util.Locale es = new java.util.Locale("es", "CO");
-            if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es", "US");
-            if (tts.isLanguageAvailable(es) < 0) es = new java.util.Locale("es");
-            tts.setLanguage(es);
-            Bundle params = new Bundle();
-            tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, "greet");
-        });
+        if (tts == null) initTts();
+        handler.postDelayed(() -> {
+            if (tts != null && ttsReady) {
+                Log.d(TAG, "Speaking TTS: " + text);
+                Bundle params = new Bundle();
+                params.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_NOTIFICATION);
+                tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, "greet");
+            } else {
+                Log.d(TAG, "TTS not ready or unsupported, using audio clips");
+                speak(buildMessage());
+            }
+        }, ttsReady ? 0 : 1000);
     }
 
     private List<String> buildMessage() {
