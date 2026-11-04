@@ -71,6 +71,10 @@ public class DriveRoadView extends FrameLayout {
         roadSurface.setSpeed(kmh);
     }
 
+    public void setLights(boolean on) {
+        roadSurface.setLights(on);
+    }
+
     public void updateOil() {
         if (!Odometer.isConfigured(getContext())) {
             if (oilKmText != null) oilKmText.setText("Aceite: configurar");
@@ -195,7 +199,6 @@ public class DriveRoadView extends FrameLayout {
 
         // Paints principales
         private final Paint skyPaint = new Paint();
-        private final Paint starPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint roadFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint shoulderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint edgeLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -206,24 +209,21 @@ public class DriveRoadView extends FrameLayout {
         private final Paint lampPostPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint lampGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint headlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint asphaltGrainPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint treeSilhouettePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint hillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         private Bitmap carBmp;
 
         private float speed = 0f;
+        private boolean lightsOn = false;
         private float roadZOffset = 0f;
         private long lastFrameTime = 0;
-
-        // Posiciones fijas de estrellas (generadas una sola vez)
-        private float[] starX, starY, starBright;
-        private static final int NUM_STARS = 60;
 
         public RoadSurfaceView(Context c) {
             super(c);
             d = c.getResources().getDisplayMetrics().density;
+
+            skyPaint.setStyle(Paint.Style.FILL);
+            skyPaint.setColor(0xFF090D16);
 
             roadFillPaint.setStyle(Paint.Style.FILL);
             shoulderPaint.setStyle(Paint.Style.FILL);
@@ -253,28 +253,7 @@ public class DriveRoadView extends FrameLayout {
 
             headlightPaint.setStyle(Paint.Style.FILL);
 
-            shadowPaint.setColor(0xCC000000);
-            shadowPaint.setStyle(Paint.Style.FILL);
-
             asphaltGrainPaint.setStyle(Paint.Style.FILL);
-
-            starPaint.setStyle(Paint.Style.FILL);
-
-            treeSilhouettePaint.setColor(0xFF080C14);
-            treeSilhouettePaint.setStyle(Paint.Style.FILL);
-
-            hillPaint.setStyle(Paint.Style.FILL);
-
-            // Generar estrellas fijas aleatorias
-            java.util.Random rng = new java.util.Random(42);
-            starX = new float[NUM_STARS];
-            starY = new float[NUM_STARS];
-            starBright = new float[NUM_STARS];
-            for (int i = 0; i < NUM_STARS; i++) {
-                starX[i] = rng.nextFloat();
-                starY[i] = rng.nextFloat() * 0.25f;
-                starBright[i] = 0.3f + rng.nextFloat() * 0.7f;
-            }
 
             try {
                 carBmp = BitmapFactory.decodeResource(c.getResources(), R.drawable.march_rear_chase);
@@ -289,6 +268,13 @@ public class DriveRoadView extends FrameLayout {
             boolean isZero = (speed <= 0.5f);
 
             if (wasZero != isZero || !isZero) {
+                invalidate();
+            }
+        }
+
+        public void setLights(boolean on) {
+            if (this.lightsOn != on) {
+                this.lightsOn = on;
                 invalidate();
             }
         }
@@ -317,99 +303,36 @@ public class DriveRoadView extends FrameLayout {
             float horizonY = h * 0.34f;
             float vanishX = w * 0.50f;
 
-            // ===== 1. CIELO NOCTURNO CON DEGRADADO Y ESTRELLAS =====
-            drawSky(canvas, w, horizonY, now, isMoving);
+            // 1. Fondo oscuro elegante sobre el horizonte (sin montañas, estrellas ni árboles)
+            canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
 
-            // ===== 2. COLINAS/VEGETACIÓN SILUETEADA EN EL HORIZONTE =====
-            drawHorizonHills(canvas, w, horizonY);
-
-            // ===== 3. CARRETERA CON HOMBRILLOS Y ASFALTO =====
+            // 2. Carretera con hombrillos y asfalto
             drawRoadSurface(canvas, w, h, horizonY, vanishX);
 
-            // ===== 4. ASFALTO TEXTURIZADO =====
+            // 3. Asfalto texturizado con grano en movimiento
             drawAsphaltTexture(canvas, w, h, horizonY, vanishX, roadZOffset, isMoving);
 
-            // ===== 5. LÍNEAS DE BORDE Y CARRILES PUNTEADOS =====
+            // 4. Líneas de borde continuo y carriles punteados
             drawEdgeLines(canvas, w, h, horizonY, vanishX);
             drawDashedLanes(canvas, w, h, horizonY, vanishX, roadZOffset);
 
-            // ===== 6. BARANDAS CON REFLECTORES =====
+            // 5. Barandas metálicas con reflectores
             drawGuardRails(canvas, w, h, horizonY, vanishX, roadZOffset);
 
-            // ===== 7. POSTES DE LUZ CON HALOS =====
+            // 6. Postes de luz de carretera con halos
             drawLampPosts(canvas, w, h, horizonY, vanishX, roadZOffset);
 
-            // ===== 8. CONO DE LUZ DE LOS FAROS =====
-            drawHeadlights(canvas, w, h, horizonY, vanishX);
+            // 7. Cono de luz de faros sobre la carretera (solo cuando las luces correspondan)
+            if (lightsOn) {
+                drawHeadlights(canvas, w, h, horizonY, vanishX);
+            }
 
-            // ===== 9. VEHÍCULO: NISSAN MARCH 2015 =====
+            // 8. Vehículo: Nissan March 2015 Blanco sin sombra oscura
             drawNissanMarch(canvas, w, h, isMoving, now);
 
             // Solicitar siguiente frame si en movimiento
             if (isMoving) {
                 postInvalidateOnAnimation();
-            }
-        }
-
-        // ───────────────────────────────────────────────────
-        // 1. CIELO NOCTURNO
-        // ───────────────────────────────────────────────────
-        private void drawSky(Canvas canvas, float w, float horizonY, long now, boolean moving) {
-            // Degradado vertical: azul profundo arriba → gris azulado en horizonte
-            LinearGradient skyGrad = new LinearGradient(0, 0, 0, horizonY,
-                    new int[]{0xFF050A18, 0xFF0A1428, 0xFF121D38, 0xFF1A2540},
-                    new float[]{0f, 0.3f, 0.7f, 1f},
-                    Shader.TileMode.CLAMP);
-            skyPaint.setShader(skyGrad);
-            canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
-
-            // Estrellas titilantes
-            for (int i = 0; i < NUM_STARS; i++) {
-                float sx = starX[i] * w;
-                float sy = starY[i] * horizonY;
-                float bright = starBright[i];
-                // Parpadeo sutil en cada estrella
-                if (moving) {
-                    bright *= 0.7f + 0.3f * (float) Math.sin(now * 0.002 + i * 1.7);
-                }
-                int alpha = (int) (255 * bright);
-                starPaint.setColor(Color.argb(alpha, 220, 230, 255));
-                float radius = (0.6f + bright * 0.9f) * d;
-                canvas.drawCircle(sx, sy, radius, starPaint);
-            }
-        }
-
-        // ───────────────────────────────────────────────────
-        // 2. COLINAS EN EL HORIZONTE
-        // ───────────────────────────────────────────────────
-        private void drawHorizonHills(Canvas canvas, float w, float horizonY) {
-            // Capa de colinas lejanas
-            hillPaint.setColor(0xFF0C1220);
-            Path hills = new Path();
-            hills.moveTo(0, horizonY);
-            hills.cubicTo(w * 0.15f, horizonY - 18 * d, w * 0.30f, horizonY - 10 * d, w * 0.45f, horizonY - 22 * d);
-            hills.cubicTo(w * 0.55f, horizonY - 14 * d, w * 0.70f, horizonY - 26 * d, w * 0.85f, horizonY - 12 * d);
-            hills.lineTo(w, horizonY - 8 * d);
-            hills.lineTo(w, horizonY + 4);
-            hills.lineTo(0, horizonY + 4);
-            hills.close();
-            canvas.drawPath(hills, hillPaint);
-
-            // Árboles silueteados (triángulos irregulares)
-            float[] treePosX = {w * 0.06f, w * 0.14f, w * 0.24f, w * 0.72f, w * 0.82f, w * 0.91f};
-            float[] treeH = {16f, 22f, 18f, 20f, 14f, 24f};
-            for (int i = 0; i < treePosX.length; i++) {
-                float tx = treePosX[i];
-                float th = treeH[i] * d;
-                Path tree = new Path();
-                tree.moveTo(tx, horizonY);
-                tree.lineTo(tx - 4 * d, horizonY);
-                tree.lineTo(tx - 2 * d, horizonY - th * 0.5f);
-                tree.lineTo(tx, horizonY - th);
-                tree.lineTo(tx + 2 * d, horizonY - th * 0.5f);
-                tree.lineTo(tx + 4 * d, horizonY);
-                tree.close();
-                canvas.drawPath(tree, treeSilhouettePaint);
             }
         }
 
@@ -734,28 +657,7 @@ public class DriveRoadView extends FrameLayout {
                 pitchOffset = (float) (Math.sin(t * 5.2) * 0.6f * d);
             }
 
-            // Sombra ovalada con gradiente de profundidad bajo los neumáticos
-            float shadowW = carW * 0.90f;
-            float shadowH = (10f + 8f * (moving ? 1f : 0f)) * d;
-            float shadowY = cy + (carH * 0.46f) + offsetY;
-
-            canvas.save();
-            RectF shadowRect = new RectF(cx - shadowW * 0.5f, shadowY - shadowH * 0.5f,
-                    cx + shadowW * 0.5f, shadowY + shadowH * 0.5f);
-            try {
-                RadialGradient shadowGrad = new RadialGradient(cx, shadowY, shadowW * 0.5f,
-                        new int[]{0xBB000000, 0x66000000, 0x00000000},
-                        new float[]{0f, 0.5f, 1f},
-                        Shader.TileMode.CLAMP);
-                shadowPaint.setShader(shadowGrad);
-            } catch (Throwable ignored) {
-                shadowPaint.setShader(null);
-                shadowPaint.setColor(0xAA000000);
-            }
-            canvas.drawOval(shadowRect, shadowPaint);
-            canvas.restore();
-
-            // Dibujar carrocería
+            // Dibujar carrocería sin sombra oscura inferior
             canvas.save();
             canvas.translate(cx, cy + offsetY + pitchOffset);
             if (moving) {

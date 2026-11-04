@@ -121,7 +121,7 @@ public class ArcSpeedometerView extends View {
         tickGlowPaint.setStyle(Paint.Style.STROKE);
         tickGlowPaint.setStrokeCap(Paint.Cap.ROUND);
         try {
-            tickGlowPaint.setMaskFilter(new BlurMaskFilter(3f * d, BlurMaskFilter.Blur.NORMAL));
+            tickGlowPaint.setMaskFilter(new BlurMaskFilter(4f * d, BlurMaskFilter.Blur.NORMAL));
         } catch (Throwable ignored) {}
 
         // Números de escala
@@ -130,34 +130,37 @@ public class ArcSpeedometerView extends View {
 
         // Número digital central — sombra
         speedShadowPaint.setTextAlign(Paint.Align.CENTER);
-        speedShadowPaint.setColor(0x6600B0FF);
-        speedShadowPaint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        speedShadowPaint.setColor(0x8800B0FF);
+        speedShadowPaint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
         try {
-            speedShadowPaint.setMaskFilter(new BlurMaskFilter(8f * d, BlurMaskFilter.Blur.NORMAL));
+            speedShadowPaint.setMaskFilter(new BlurMaskFilter(10f * d, BlurMaskFilter.Blur.NORMAL));
         } catch (Throwable ignored) {}
 
-        // Número digital central — frontal
+        // Número digital central — frontal (itálico negrita como en la imagen)
         speedPaint.setTextAlign(Paint.Align.CENTER);
         speedPaint.setColor(Color.WHITE);
-        speedPaint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        speedPaint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
 
         // Unidad km/h
         unitPaint.setTextAlign(Paint.Align.CENTER);
-        unitPaint.setColor(0xBBFFFFFF);
-        unitPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        unitPaint.setColor(0xEEFFFFFF);
+        unitPaint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
 
-        // Aguja triangular
-        needlePaint.setStyle(Paint.Style.FILL);
+        // Rayo indicador de velocidad
+        needlePaint.setStyle(Paint.Style.STROKE);
         needlePaint.setColor(0xFF00E5FF);
+        needlePaint.setStrokeCap(Paint.Cap.ROUND);
 
-        needleGlowPaint.setStyle(Paint.Style.FILL);
-        needleGlowPaint.setColor(0x4400E5FF);
+        needleGlowPaint.setStyle(Paint.Style.STROKE);
+        needleGlowPaint.setColor(0x5500E5FF);
+        needleGlowPaint.setStrokeCap(Paint.Cap.ROUND);
         try {
-            needleGlowPaint.setMaskFilter(new BlurMaskFilter(6f * d, BlurMaskFilter.Blur.NORMAL));
+            needleGlowPaint.setMaskFilter(new BlurMaskFilter(8f * d, BlurMaskFilter.Blur.NORMAL));
         } catch (Throwable ignored) {}
 
-        needleTipPaint.setStyle(Paint.Style.FILL);
+        needleTipPaint.setStyle(Paint.Style.STROKE);
         needleTipPaint.setColor(Color.WHITE);
+        needleTipPaint.setStrokeCap(Paint.Cap.ROUND);
 
         centerDotPaint.setStyle(Paint.Style.FILL);
 
@@ -362,45 +365,33 @@ public class ArcSpeedometerView extends View {
         }
 
         // ════════════════════════════════════════════
-        // 5. AGUJA / INDICADOR TRIANGULAR
+        // 5. AGUJA / RAYO LUMINOSO INDICADOR (SEGÚN REFERENCIA)
         // ════════════════════════════════════════════
         double activeRad = Math.toRadians(START_ANGLE + activeSweep);
         float nCos = (float) Math.cos(activeRad);
         float nSin = (float) Math.sin(activeRad);
 
-        float needleLen = radius * 0.48f;
-        float needleOutR = tickOuter + 2f * d;
+        float needleInnerR = radius * 0.32f;
+        float needleOuterR = radius + 2f * d;
 
-        float tipX = cx + nCos * needleOutR;
-        float tipY = cy + nSin * needleOutR;
-        float baseX = cx + nCos * (needleOutR - needleLen);
-        float baseY = cy + nSin * (needleOutR - needleLen);
+        float tipX = cx + nCos * needleOuterR;
+        float tipY = cy + nSin * needleOuterR;
+        float baseX = cx + nCos * needleInnerR;
+        float baseY = cy + nSin * needleInnerR;
 
-        // Vector perpendicular para el ancho de la base del triángulo
-        float perpX = -nSin;
-        float perpY = nCos;
-        float baseHalfW = 3.5f * d;
+        // Glow difuso del rayo
+        needleGlowPaint.setStrokeWidth(10f * d);
+        canvas.drawLine(baseX, baseY, tipX, tipY, needleGlowPaint);
 
-        Path needlePath = new Path();
-        needlePath.moveTo(tipX, tipY);
-        needlePath.lineTo(baseX + perpX * baseHalfW, baseY + perpY * baseHalfW);
-        needlePath.lineTo(baseX - perpX * baseHalfW, baseY - perpY * baseHalfW);
-        needlePath.close();
+        // Núcleo brillante cian
+        needlePaint.setStrokeWidth(3f * d);
+        canvas.drawLine(baseX, baseY, tipX, tipY, needlePaint);
 
-        // Sombra / glow de la aguja
-        canvas.drawPath(needlePath, needleGlowPaint);
-        // Aguja sólida
-        needlePaint.setShader(new LinearGradient(
-                tipX, tipY, baseX, baseY,
-                new int[]{0xFF00E5FF, 0xCC00AAFF, 0x4400AAFF},
-                new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
-        canvas.drawPath(needlePath, needlePaint);
+        // Línea central blanca intensa
+        needleTipPaint.setStrokeWidth(1.2f * d);
+        canvas.drawLine(baseX + nCos * 12f * d, baseY + nSin * 12f * d, tipX, tipY, needleTipPaint);
 
-        // Punto brillante en la punta
-        needleTipPaint.setColor(Color.WHITE);
-        canvas.drawCircle(tipX, tipY, 3.5f * d, needleTipPaint);
-
-        // Dot luminoso en el hub central
+        // Dot luminoso en el centro / hub
         try {
             RadialGradient hubGrad = new RadialGradient(cx, cy, 8f * d,
                     new int[]{0xAA00E5FF, 0x4400AAFF, 0x0000AAFF},
@@ -413,45 +404,45 @@ public class ArcSpeedometerView extends View {
         canvas.drawCircle(cx, cy, 6f * d, centerDotPaint);
 
         // ════════════════════════════════════════════
-        // 6. LECTURA DIGITAL CENTRAL (ENORME)
+        // 6. LECTURA DIGITAL CENTRAL (ENORME E ITÁLICA)
         // ════════════════════════════════════════════
         int displaySpeed = Math.round(currentSpeed);
         String speedStr = String.valueOf(displaySpeed);
 
-        // Tamaño dinámico: ocupa ~ 40% del radio
-        float bigSize = Math.max(32f * d, radius * 0.42f);
+        // Tamaño dinámico: ocupa ~ 46% del radio
+        float bigSize = Math.max(36f * d, radius * 0.46f);
         speedPaint.setTextSize(bigSize);
         speedShadowPaint.setTextSize(bigSize);
 
-        float numY = cy - radius * 0.18f;
+        float numY = cy - radius * 0.16f;
 
         // Sombra neón detrás del número
         canvas.drawText(speedStr, cx, numY, speedShadowPaint);
-        // Número blanco principal
+        // Número blanco principal en itálica bold
         canvas.drawText(speedStr, cx, numY, speedPaint);
 
         // Unidad km/h
-        float unitSize = Math.max(11f * d, radius * 0.10f);
+        float unitSize = Math.max(12f * d, radius * 0.11f);
         unitPaint.setTextSize(unitSize);
-        canvas.drawText("km/h", cx, numY + bigSize * 0.36f, unitPaint);
+        canvas.drawText("km/h", cx, numY + bigSize * 0.38f, unitPaint);
 
         // ════════════════════════════════════════════
-        // 7. LÍNEAS HUD VIALES EN LA BASE
+        // 7. LÍNEAS HUD VIALES EN LA BASE (PERSPECTIVA DE CARRETERA)
         // ════════════════════════════════════════════
-        float hudBaseY = cy + 6f * d;
-        float hudTopY = cy - 8f * d;
-        float hudSpread = radius * 0.42f;
-        float hudNarrow = radius * 0.10f;
+        float hudTopY = cy + 4f * d;
+        float hudBaseY = Math.min(h - 4f * d, cy + radius * 0.42f);
+        float hudNarrow = radius * 0.16f;
+        float hudSpread = radius * 0.52f;
 
-        // Cuadrícula horizontal
-        for (float p = 0.2f; p <= 1.0f; p += 0.30f) {
+        // Cuadrícula horizontal tenue en perspectiva
+        for (float p = 0.25f; p <= 1.0f; p += 0.25f) {
             float gy = hudTopY + (hudBaseY - hudTopY) * p;
             float gxL = (cx - hudNarrow) + ((cx - hudSpread) - (cx - hudNarrow)) * p;
             float gxR = (cx + hudNarrow) + ((cx + hudSpread) - (cx + hudNarrow)) * p;
             canvas.drawLine(gxL, gy, gxR, gy, hudGridPaint);
         }
 
-        // Dos líneas diagonales brillantes
+        // Dos líneas diagonales con resplandor cian
         canvas.drawLine(cx - hudSpread, hudBaseY, cx - hudNarrow, hudTopY, hudGlowPaint);
         canvas.drawLine(cx - hudSpread, hudBaseY, cx - hudNarrow, hudTopY, hudLinePaint);
         canvas.drawLine(cx + hudSpread, hudBaseY, cx + hudNarrow, hudTopY, hudGlowPaint);
