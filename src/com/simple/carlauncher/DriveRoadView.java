@@ -48,6 +48,16 @@ public class DriveRoadView extends FrameLayout {
         super(context);
         density = context.getResources().getDisplayMetrics().density;
 
+        // Marco y fondo de tarjeta adaptable a wallpaper con esquinas redondeadas
+        boolean hasWp = Ui.hasWallpaper(context);
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                hasWp ? new int[]{0x59101424, 0x6E0A0D18}
+                        : new int[]{0xFF131722, 0xFF0D1017});
+        cardBg.setCornerRadius(18 * density);
+        cardBg.setStroke((int) (1 * density), hasWp ? 0x33FFFFFF : 0x2600E5FF);
+        setBackground(cardBg);
+        setClipToOutline(true);
+
         // Fondo y superficie interactiva de carretera + carro
         roadSurface = new RoadSurfaceView(context);
         roadSurface.setOnClickListener(v -> {
@@ -56,14 +66,12 @@ public class DriveRoadView extends FrameLayout {
         });
         addView(roadSurface, new FrameLayout.LayoutParams(-1, -1));
 
-        // Tarjeta flotante HUD de Reloj + Aceite en la parte superior centrada
+        // Tarjeta flotante HUD de Reloj + Aceite en la parte superior centrada (cápsula 100% translúcida)
         View topOverlay = buildTopHudOverlay(context);
         FrameLayout.LayoutParams olp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         int marginT = (int) (10 * density);
         olp.setMargins(0, marginT, 0, 0);
         addView(topOverlay, olp);
-
-        setClipToOutline(true);
     }
 
     public void setSpeed(float kmh) {
@@ -102,9 +110,11 @@ public class DriveRoadView extends FrameLayout {
         card.setPadding(padH, padV, padH, padV);
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xD90B101C);
+        boolean hasWp = Ui.hasWallpaper(c);
+        // Cápsula 100% translúcida estilo glassmorphism (permite ver claramente el wallpaper o cielo a través de ella)
+        bg.setColor(hasWp ? 0x4010182A : 0x660B101C);
         bg.setCornerRadius(20 * density);
-        bg.setStroke((int) (1 * density), 0x3300E5FF);
+        bg.setStroke((int) (1 * density), hasWp ? 0x5500E5FF : 0x3300E5FF);
         card.setBackground(bg);
         Ui.pressable(card, 0.92f);
         card.setOnClickListener(v -> c.startActivity(new android.content.Intent(c, OilActivity.class)));
@@ -304,8 +314,21 @@ public class DriveRoadView extends FrameLayout {
             float horizonY = h * 0.34f;
             float vanishX = w * 0.50f;
 
-            // 1. Fondo oscuro elegante sobre el horizonte (sin montañas, estrellas ni árboles)
-            canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
+            // 1. Fondo sobre el horizonte (cielo / espacio superior)
+            // Si hay fondo de pantalla (wallpaper), usamos un degradado translúcido sutil para no crear un
+            // recuadro oscuro opaco y permitir que el wallpaper se aprecie a través de la cápsula HUD y del cielo.
+            if (Ui.hasWallpaper(getContext())) {
+                LinearGradient skyGrad = new LinearGradient(0, 0, 0, horizonY + 2,
+                        new int[]{0x14090D16, 0x3D090D16},
+                        new float[]{0f, 1f},
+                        Shader.TileMode.CLAMP);
+                skyPaint.setShader(skyGrad);
+                canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
+            } else {
+                skyPaint.setShader(null);
+                skyPaint.setColor(0xFF090D16);
+                canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
+            }
 
             // 2. Carretera con hombrillos y asfalto
             drawRoadSurface(canvas, w, h, horizonY, vanishX);
@@ -353,7 +376,7 @@ public class DriveRoadView extends FrameLayout {
             shoulder.lineTo(vanishX + w * 0.12f, horizonY);
             shoulder.lineTo(w * 1.3f, h);
             shoulder.close();
-            shoulderPaint.setColor(0xFF0A0E16);
+            shoulderPaint.setColor(Ui.hasWallpaper(getContext()) ? 0x660A0E16 : 0xFF0A0E16);
             canvas.drawPath(shoulder, shoulderPaint);
 
             // Carretera principal con degradado de profundidad
