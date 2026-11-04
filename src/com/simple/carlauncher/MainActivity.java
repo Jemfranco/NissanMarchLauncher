@@ -350,6 +350,9 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         card.setClipToOutline(true);
 
         speedometerView = new ArcSpeedometerView(this);
+        speedometerView.setOnSpeedDemoListener(speed -> {
+            if (driveRoadView != null) driveRoadView.setSpeed(speed);
+        });
         card.addView(speedometerView, new FrameLayout.LayoutParams(-1, -1));
         return card;
     }
