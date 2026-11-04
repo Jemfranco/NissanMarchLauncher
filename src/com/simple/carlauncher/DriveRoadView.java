@@ -56,13 +56,12 @@ public class DriveRoadView extends FrameLayout {
         });
         addView(roadSurface, new FrameLayout.LayoutParams(-1, -1));
 
-        // Tarjeta flotante de Reloj + Aceite en la parte inferior
-        View bottomOverlay = buildBottomOverlay(context);
-        FrameLayout.LayoutParams olp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
-        int marginH = (int) (14 * density);
-        int marginB = (int) (12 * density);
-        olp.setMargins(marginH, 0, marginH, marginB);
-        addView(bottomOverlay, olp);
+        // Tarjeta flotante HUD de Reloj + Aceite en la parte superior centrada
+        View topOverlay = buildTopHudOverlay(context);
+        FrameLayout.LayoutParams olp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        int marginT = (int) (10 * density);
+        olp.setMargins(0, marginT, 0, 0);
+        addView(topOverlay, olp);
 
         setClipToOutline(true);
     }
@@ -94,19 +93,21 @@ public class DriveRoadView extends FrameLayout {
         }
     }
 
-    private View buildBottomOverlay(Context c) {
+    private View buildTopHudOverlay(Context c) {
         LinearLayout card = new LinearLayout(c);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        int padH = (int) (16 * density);
-        int padV = (int) (10 * density);
+        int padH = (int) (18 * density);
+        int padV = (int) (8 * density);
         card.setPadding(padH, padV, padH, padV);
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xD90D1220);
-        bg.setCornerRadius(16 * density);
+        bg.setColor(0xD90B101C);
+        bg.setCornerRadius(20 * density);
         bg.setStroke((int) (1 * density), 0x3300E5FF);
         card.setBackground(bg);
+        Ui.pressable(card, 0.92f);
+        card.setOnClickListener(v -> c.startActivity(new android.content.Intent(c, OilActivity.class)));
 
         // Lado izquierdo: Hora y Fecha
         LinearLayout leftCol = new LinearLayout(c);
