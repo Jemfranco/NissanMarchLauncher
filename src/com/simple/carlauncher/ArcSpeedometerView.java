@@ -61,6 +61,14 @@ public class ArcSpeedometerView extends View {
     private final Paint hudGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final RectF arcRect = new RectF();
+    private final RectF outerRect = new RectF();
+    private final RectF fragRect = new RectF();
+    private final Paint fragPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private float lastW = 0f, lastH = 0f, lastRadius = 0f;
+    private LinearGradient cachedArcGrad = null;
+    private RadialGradient cachedVigGrad = null;
+    private RadialGradient cachedHubGrad = null;
 
     private float currentSpeed = 0f;
     private float targetSpeed = 0f;
@@ -86,6 +94,11 @@ public class ArcSpeedometerView extends View {
         outerRingGlowPaint.setStyle(Paint.Style.STROKE);
         outerRingGlowPaint.setStrokeWidth(4f * d);
         outerRingGlowPaint.setColor(0x1A00E5FF);
+
+        // Fragmentos luminosos decorativos
+        fragPaint.setStyle(Paint.Style.STROKE);
+        fragPaint.setStrokeWidth(2.5f * d);
+        fragPaint.setStrokeCap(Paint.Cap.ROUND);
 
         // Pista inactiva (fondo del arco)
         trackPaint.setStyle(Paint.Style.STROKE);
@@ -247,13 +260,17 @@ public class ArcSpeedometerView extends View {
         // ════════════════════════════════════════════
         // 0. VIÑETA RADIAL DE PROFUNDIDAD
         // ════════════════════════════════════════════
-        try {
-            RadialGradient vig = new RadialGradient(cx, cy * 0.85f, radius * 1.4f,
-                    new int[]{0x0000080E, 0x2200050A, 0x66000307},
-                    new float[]{0f, 0.6f, 1f}, Shader.TileMode.CLAMP);
-            vignettePaint.setShader(vig);
+        if (cachedVigGrad == null || w != lastW || h != lastH || radius != lastRadius) {
+            try {
+                cachedVigGrad = new RadialGradient(cx, cy * 0.85f, radius * 1.4f,
+                        new int[]{0x0000080E, 0x2200050A, 0x66000307},
+                        new float[]{0f, 0.6f, 1f}, Shader.TileMode.CLAMP);
+            } catch (Throwable ignored) {}
+        }
+        if (cachedVigGrad != null) {
+            vignettePaint.setShader(cachedVigGrad);
             canvas.drawRect(0, 0, w, h, vignettePaint);
-        } catch (Throwable ignored) {}
+        }
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
 
@@ -261,22 +278,18 @@ public class ArcSpeedometerView extends View {
         // 1. ANILLO EXTERIOR DECORATIVO
         // ════════════════════════════════════════════
         float outerR = radius + 6f * d;
-        RectF outerRect = new RectF(cx - outerR, cy - outerR, cx + outerR, cy + outerR);
+        outerRect.set(cx - outerR, cy - outerR, cx + outerR, cy + outerR);
         canvas.drawArc(outerRect, START_ANGLE, SWEEP_ANGLE, false, outerRingGlowPaint);
         canvas.drawArc(outerRect, START_ANGLE, SWEEP_ANGLE, false, outerRingPaint);
 
-        // Fragmentos luminosos decorativos en el anillo exterior
-        Paint fragPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fragPaint.setStyle(Paint.Style.STROKE);
-        fragPaint.setStrokeWidth(2.5f * d);
-        fragPaint.setStrokeCap(Paint.Cap.ROUND);
+        // Fragmentos luminosos decorativos en el anillo exterior (reutilizando fragPaint y fragRect)
         float fragR = radius + 12f * d;
-        RectF fragRect = new RectF(cx - fragR, cy - fragR, cx + fragR, cy + fragR);
+        fragRect.set(cx - fragR, cy - fragR, cx + fragR, cy + fragR);
         for (int v = 0; v <= 200; v += 20) {
-            float frac = (float) v / MAX_SPEED;
+            float vFrac = (float) v / MAX_SPEED;
             boolean active = v <= currentSpeed;
             fragPaint.setColor(active ? 0x5500E5FF : 0x1500E5FF);
-            float startA = START_ANGLE + frac * SWEEP_ANGLE - 1.5f;
+            float startA = START_ANGLE + vFrac * SWEEP_ANGLE - 1.5f;
             canvas.drawArc(fragRect, startA, 3f, false, fragPaint);
         }
 
@@ -291,15 +304,16 @@ public class ArcSpeedometerView extends View {
         float frac = Math.max(0.003f, currentSpeed / MAX_SPEED);
         float activeSweep = frac * SWEEP_ANGLE;
 
-        LinearGradient arcGrad = new LinearGradient(
-                cx - radius, cy, cx + radius, cy,
-                new int[]{0xFF00E5FF, 0xFF00AAFF, 0xFF2962FF, 0xFF6200EA},
-                new float[]{0f, 0.35f, 0.7f, 1f},
-                Shader.TileMode.CLAMP);
-
-        arcOuterGlowPaint.setShader(arcGrad);
-        arcGlowPaint.setShader(arcGrad);
-        arcCorePaint.setShader(arcGrad);
+        if (cachedArcGrad == null || w != lastW || h != lastH || radius != lastRadius) {
+            cachedArcGrad = new LinearGradient(
+                    cx - radius, cy, cx + radius, cy,
+                    new int[]{0xFF00E5FF, 0xFF00AAFF, 0xFF2962FF, 0xFF6200EA},
+                    new float[]{0f, 0.35f, 0.7f, 1f},
+                    Shader.TileMode.CLAMP);
+            arcOuterGlowPaint.setShader(cachedArcGrad);
+            arcGlowPaint.setShader(cachedArcGrad);
+            arcCorePaint.setShader(cachedArcGrad);
+        }
 
         // Capa 3: resplandor difuso amplio
         canvas.drawArc(arcRect, START_ANGLE, activeSweep, false, arcOuterGlowPaint);
@@ -392,16 +406,24 @@ public class ArcSpeedometerView extends View {
         canvas.drawLine(baseX + nCos * 12f * d, baseY + nSin * 12f * d, tipX, tipY, needleTipPaint);
 
         // Dot luminoso en el centro / hub
-        try {
-            RadialGradient hubGrad = new RadialGradient(cx, cy, 8f * d,
-                    new int[]{0xAA00E5FF, 0x4400AAFF, 0x0000AAFF},
-                    new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP);
-            centerDotPaint.setShader(hubGrad);
-        } catch (Throwable ignored) {
+        if (cachedHubGrad == null || w != lastW || h != lastH || radius != lastRadius) {
+            try {
+                cachedHubGrad = new RadialGradient(cx, cy, 8f * d,
+                        new int[]{0xAA00E5FF, 0x4400AAFF, 0x0000AAFF},
+                        new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP);
+            } catch (Throwable ignored) {}
+        }
+        if (cachedHubGrad != null) {
+            centerDotPaint.setShader(cachedHubGrad);
+        } else {
             centerDotPaint.setShader(null);
             centerDotPaint.setColor(0x6600E5FF);
         }
         canvas.drawCircle(cx, cy, 6f * d, centerDotPaint);
+
+        lastW = w;
+        lastH = h;
+        lastRadius = radius;
 
         // ════════════════════════════════════════════
         // 6. LECTURA DIGITAL CENTRAL (ENORME E ITÁLICA)

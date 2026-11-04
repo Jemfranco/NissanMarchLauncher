@@ -44,6 +44,20 @@ public class DriveRoadView extends FrameLayout {
     private View oilProgressFill;
     private int oilProgressWidth = 100;
 
+    public interface OnLightsToggleListener {
+        void onLightsToggled(boolean newOn);
+        void onLightsResetAuto();
+    }
+    private OnLightsToggleListener lightsListener;
+
+    public void setOnLightsToggleListener(OnLightsToggleListener l) {
+        this.lightsListener = l;
+    }
+
+    public boolean getLights() {
+        return roadSurface != null && roadSurface.getLights();
+    }
+
     public DriveRoadView(Context context) {
         super(context);
         density = context.getResources().getDisplayMetrics().density;
@@ -61,8 +75,20 @@ public class DriveRoadView extends FrameLayout {
         // Fondo y superficie interactiva de carretera + carro
         roadSurface = new RoadSurfaceView(context);
         roadSurface.setOnClickListener(v -> {
-            context.sendBroadcast(new android.content.Intent("com.simple.carlauncher.TEST_CAR_ON"));
-            android.widget.Toast.makeText(context, "\uD83C\uDF99\uFE0F Saludo de bienvenida activado", android.widget.Toast.LENGTH_SHORT).show();
+            if (lightsListener != null) {
+                lightsListener.onLightsToggled(!getLights());
+            } else {
+                setLights(!getLights());
+            }
+        });
+        roadSurface.setOnLongClickListener(v -> {
+            if (lightsListener != null) {
+                lightsListener.onLightsResetAuto();
+            } else {
+                context.sendBroadcast(new android.content.Intent("com.simple.carlauncher.TEST_CAR_ON"));
+                android.widget.Toast.makeText(context, "\u23F0 Luces en modo autom\u00E1tico (Colombia: 6:00 PM - 6:00 AM)", android.widget.Toast.LENGTH_SHORT).show();
+            }
+            return true;
         });
         addView(roadSurface, new FrameLayout.LayoutParams(-1, -1));
 
@@ -229,6 +255,18 @@ public class DriveRoadView extends FrameLayout {
         private float roadZOffset = 0f;
         private long lastFrameTime = 0;
 
+        // Caching para máxima fluidez y 0 recolección de basura (GC) en 60 FPS
+        private final Path shoulderPath = new Path();
+        private final Path roadPath = new Path();
+        private final Path conePath = new Path();
+        private final Rect carSrcRect = new Rect();
+        private final RectF carDstRect = new RectF();
+
+        private float lastW = 0f, lastH = 0f, lastHorizonY = 0f;
+        private LinearGradient cachedRoadGrad = null;
+        private LinearGradient cachedHeadlightGrad = null;
+        private LinearGradient cachedSkyGrad = null;
+
         public RoadSurfaceView(Context c) {
             super(c);
             d = c.getResources().getDisplayMetrics().density;
@@ -290,6 +328,10 @@ public class DriveRoadView extends FrameLayout {
             }
         }
 
+        public boolean getLights() {
+            return lightsOn;
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
@@ -318,17 +360,22 @@ public class DriveRoadView extends FrameLayout {
             // Si hay fondo de pantalla (wallpaper), usamos un degradado translúcido sutil para no crear un
             // recuadro oscuro opaco y permitir que el wallpaper se aprecie a través de la cápsula HUD y del cielo.
             if (Ui.hasWallpaper(getContext())) {
-                LinearGradient skyGrad = new LinearGradient(0, 0, 0, horizonY + 2,
-                        new int[]{0x14090D16, 0x3D090D16},
-                        new float[]{0f, 1f},
-                        Shader.TileMode.CLAMP);
-                skyPaint.setShader(skyGrad);
+                if (cachedSkyGrad == null || w != lastW || horizonY != lastHorizonY) {
+                    cachedSkyGrad = new LinearGradient(0, 0, 0, horizonY + 2,
+                            new int[]{0x14090D16, 0x3D090D16},
+                            new float[]{0f, 1f},
+                            Shader.TileMode.CLAMP);
+                }
+                skyPaint.setShader(cachedSkyGrad);
                 canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
             } else {
                 skyPaint.setShader(null);
                 skyPaint.setColor(0xFF090D16);
                 canvas.drawRect(0, 0, w, horizonY + 2, skyPaint);
             }
+            lastW = w;
+            lastH = h;
+            lastHorizonY = horizonY;
 
             // 2. Carretera con hombrillos y asfalto
             drawRoadSurface(canvas, w, h, horizonY, vanishX);
@@ -370,29 +417,31 @@ public class DriveRoadView extends FrameLayout {
             float roadTR = vanishX + w * 0.08f;
 
             // Hombrillos exteriores (más oscuros)
-            Path shoulder = new Path();
-            shoulder.moveTo(-w * 0.3f, h);
-            shoulder.lineTo(vanishX - w * 0.12f, horizonY);
-            shoulder.lineTo(vanishX + w * 0.12f, horizonY);
-            shoulder.lineTo(w * 1.3f, h);
-            shoulder.close();
+            shoulderPath.reset();
+            shoulderPath.moveTo(-w * 0.3f, h);
+            shoulderPath.lineTo(vanishX - w * 0.12f, horizonY);
+            shoulderPath.lineTo(vanishX + w * 0.12f, horizonY);
+            shoulderPath.lineTo(w * 1.3f, h);
+            shoulderPath.close();
             shoulderPaint.setColor(Ui.hasWallpaper(getContext()) ? 0x660A0E16 : 0xFF0A0E16);
-            canvas.drawPath(shoulder, shoulderPaint);
+            canvas.drawPath(shoulderPath, shoulderPaint);
 
             // Carretera principal con degradado de profundidad
-            Path road = new Path();
-            road.moveTo(roadBL, h);
-            road.lineTo(roadTL, horizonY);
-            road.lineTo(roadTR, horizonY);
-            road.lineTo(roadBR, h);
-            road.close();
+            roadPath.reset();
+            roadPath.moveTo(roadBL, h);
+            roadPath.lineTo(roadTL, horizonY);
+            roadPath.lineTo(roadTR, horizonY);
+            roadPath.lineTo(roadBR, h);
+            roadPath.close();
 
-            LinearGradient roadGrad = new LinearGradient(0, horizonY, 0, h,
-                    new int[]{0xFF181C28, 0xFF1A1E2A, 0xFF1E2230},
-                    new float[]{0f, 0.5f, 1f},
-                    Shader.TileMode.CLAMP);
-            roadFillPaint.setShader(roadGrad);
-            canvas.drawPath(road, roadFillPaint);
+            if (cachedRoadGrad == null || w != lastW || h != lastH || horizonY != lastHorizonY) {
+                cachedRoadGrad = new LinearGradient(0, horizonY, 0, h,
+                        new int[]{0xFF181C28, 0xFF1A1E2A, 0xFF1E2230},
+                        new float[]{0f, 0.5f, 1f},
+                        Shader.TileMode.CLAMP);
+            }
+            roadFillPaint.setShader(cachedRoadGrad);
+            canvas.drawPath(roadPath, roadFillPaint);
         }
 
         // ───────────────────────────────────────────────────
@@ -633,7 +682,6 @@ public class DriveRoadView extends FrameLayout {
         // ───────────────────────────────────────────────────
         private void drawHeadlights(Canvas canvas, float w, float h, float horizonY, float vanishX) {
             // Cono trapezoidal de luz iluminando la carretera desde la posición del carro
-            Path cone = new Path();
             float coneBottomLeft = w * 0.28f;
             float coneBottomRight = w * 0.72f;
             float coneTopLeft = vanishX - w * 0.04f;
@@ -641,18 +689,21 @@ public class DriveRoadView extends FrameLayout {
             float coneBottom = h * 0.82f;
             float coneTop = horizonY + (h - horizonY) * 0.12f;
 
-            cone.moveTo(coneBottomLeft, coneBottom);
-            cone.lineTo(coneTopLeft, coneTop);
-            cone.lineTo(coneTopRight, coneTop);
-            cone.lineTo(coneBottomRight, coneBottom);
-            cone.close();
+            conePath.reset();
+            conePath.moveTo(coneBottomLeft, coneBottom);
+            conePath.lineTo(coneTopLeft, coneTop);
+            conePath.lineTo(coneTopRight, coneTop);
+            conePath.lineTo(coneBottomRight, coneBottom);
+            conePath.close();
 
-            LinearGradient headlightGrad = new LinearGradient(0, coneBottom, 0, coneTop,
-                    new int[]{0x18FFFFFF, 0x0DFFFFFF, 0x04FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.3f, 0.6f, 1f},
-                    Shader.TileMode.CLAMP);
-            headlightPaint.setShader(headlightGrad);
-            canvas.drawPath(cone, headlightPaint);
+            if (cachedHeadlightGrad == null || w != lastW || h != lastH || horizonY != lastHorizonY) {
+                cachedHeadlightGrad = new LinearGradient(0, coneBottom, 0, coneTop,
+                        new int[]{0x18FFFFFF, 0x0DFFFFFF, 0x04FFFFFF, 0x00FFFFFF},
+                        new float[]{0f, 0.3f, 0.6f, 1f},
+                        Shader.TileMode.CLAMP);
+            }
+            headlightPaint.setShader(cachedHeadlightGrad);
+            canvas.drawPath(conePath, headlightPaint);
         }
 
         // ───────────────────────────────────────────────────
@@ -689,9 +740,9 @@ public class DriveRoadView extends FrameLayout {
             }
 
             if (carBmp != null) {
-                Rect src = new Rect(0, 0, carBmp.getWidth(), carBmp.getHeight());
-                RectF dst = new RectF(-carW * 0.5f, -carH * 0.5f, carW * 0.5f, carH * 0.5f);
-                canvas.drawBitmap(carBmp, src, dst, null);
+                carSrcRect.set(0, 0, carBmp.getWidth(), carBmp.getHeight());
+                carDstRect.set(-carW * 0.5f, -carH * 0.5f, carW * 0.5f, carH * 0.5f);
+                canvas.drawBitmap(carBmp, carSrcRect, carDstRect, null);
             } else {
                 drawFallbackMarchVector(canvas, carW, carH);
             }

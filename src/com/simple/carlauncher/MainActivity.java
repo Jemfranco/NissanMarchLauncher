@@ -284,6 +284,17 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             driveRoadView = new DriveRoadView(this);
             driveRoadView.setLights(lightsOn);
             driveRoadView.updateOil();
+            driveRoadView.setOnLightsToggleListener(new DriveRoadView.OnLightsToggleListener() {
+                @Override
+                public void onLightsToggled(boolean newOn) {
+                    toggleCarLightsManual();
+                }
+
+                @Override
+                public void onLightsResetAuto() {
+                    resetCarLightsAuto();
+                }
+            });
             return driveRoadView;
         } else if ("speedo".equals(type)) {
             return buildSpeedometerCard(compact);
@@ -401,6 +412,19 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
                 cards.addView(secColView, weight(1f, 0));
             } else {
                 driveRoadView = new DriveRoadView(this);
+                driveRoadView.setLights(lightsOn);
+                driveRoadView.updateOil();
+                driveRoadView.setOnLightsToggleListener(new DriveRoadView.OnLightsToggleListener() {
+                    @Override
+                    public void onLightsToggled(boolean newOn) {
+                        toggleCarLightsManual();
+                    }
+
+                    @Override
+                    public void onLightsResetAuto() {
+                        resetCarLightsAuto();
+                    }
+                });
                 cards.addView(wrapCardWithSlot(driveRoadView, "slot_main"), weight(1f, 0));
             }
         } else {
@@ -1416,12 +1440,9 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
         carBox.addView(car, new FrameLayout.LayoutParams(-1, -1));
         carBox.addView(carLights, new FrameLayout.LayoutParams(-1, -1));
-        carBox.setOnClickListener(v -> {
-            lightsOn = !lightsOn;
-            showCarLights(lightsOn);
-        });
+        carBox.setOnClickListener(v -> toggleCarLightsManual());
         carBox.setOnLongClickListener(v -> {
-            startActivity(new Intent(this, SetupActivity.class));
+            resetCarLightsAuto();
             return true;
         });
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, 0, 1f);
@@ -1529,6 +1550,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         public void onReceive(android.content.Context c, Intent i) {
             String action = i.getAction();
             android.util.Log.d("CarLights", "ILL broadcast action=" + action + " extras=" + i.getExtras());
+            // Evento físico del arnés del carro: resetea a modo automático para sincronizarse
+            Ui.setManualLightsMode(c, "auto");
             boolean on = false;
             if ("com.xyauto.intent.action.ILLUMINATION_ON".equals(action)
                     || "android.intent.action.HEADLIGHT_ON".equals(action)) {
@@ -1557,7 +1580,27 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     };
 
     private boolean carLightsOn() {
-        return Ui.areCarLightsOn(this);
+        return Ui.shouldCarLightsBeOn(this);
+    }
+
+    private void toggleCarLightsManual() {
+        boolean newOn = !lightsOn;
+        lightsOn = newOn;
+        Ui.setManualLightsMode(this, newOn ? "on" : "off");
+        showCarLights(newOn);
+        android.widget.Toast.makeText(this, newOn ? "\uD83D\uDCA1 Luces encendidas (Manual)" : "\uD83C\uDF11 Luces apagadas (Manual)", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void resetCarLightsAuto() {
+        Ui.setManualLightsMode(this, "auto");
+        boolean autoOn = hasLightsImage && carLightsOn();
+        lightsOn = autoOn;
+        showCarLights(autoOn);
+        boolean colNight = Ui.isColombiaNightSchedule();
+        String msg = colNight
+                ? "\u23F0 Modo autom\u00E1tico: Luces encendidas (Horario Colombia: 6:00 PM - 6:00 AM)"
+                : "\u23F0 Modo autom\u00E1tico: Luces apagadas (Horario Colombia: 6:00 PM - 6:00 AM)";
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void showCarLights(boolean on) {

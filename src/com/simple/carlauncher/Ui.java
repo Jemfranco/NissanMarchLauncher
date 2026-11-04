@@ -135,7 +135,35 @@ final class Ui {
                 return true;
             }
         } catch (Throwable ignored) {}
-        // Fallback: Automatic by schedule (from 6:00 PM to 6:00 AM headlights are on)
+        // Fallback: Automático por horario legal de Colombia (Ley 769 de 2002, art. 86: 18:00 a 06:00)
+        return isColombiaNightSchedule();
+    }
+
+    static final String PREF_MANUAL_LIGHTS = "manual_lights_mode"; // "auto", "on", "off"
+
+    static String manualLightsMode(Context c) {
+        return c.getSharedPreferences("ui", Context.MODE_PRIVATE).getString(PREF_MANUAL_LIGHTS, "auto");
+    }
+
+    static void setManualLightsMode(Context c, String mode) {
+        c.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putString(PREF_MANUAL_LIGHTS, mode).apply();
+    }
+
+    /**
+     * Determina si las luces del auto deben estar encendidas:
+     * 1. Si el usuario seleccionó manualmente "on" u "off", se respeta su decisión táctil.
+     * 2. Si está en "auto":
+     *    - Detecta el cable ILL físico / MCU del arnés del vehículo si está encendido.
+     *    - Horario legal de Colombia (18:00 a 06:00).
+     */
+    static boolean shouldCarLightsBeOn(Context c) {
+        String mode = manualLightsMode(c);
+        if ("on".equals(mode)) return true;
+        if ("off".equals(mode)) return false;
+        return areCarLightsOn(c);
+    }
+
+    static boolean isColombiaNightSchedule() {
         int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
         return h >= 18 || h < 6;
     }
