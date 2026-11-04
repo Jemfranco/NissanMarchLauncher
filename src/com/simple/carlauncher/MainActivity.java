@@ -1030,6 +1030,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     }
 
     private void updateGreeting() {
+        if (greeting == null) return;
         int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         greeting.setText((h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches")
                 + " · Bienvenido");
@@ -1037,15 +1038,21 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     private void showWeather(Weather w) {
         if (w == null) return;
-        weatherIcon.setImageResource(w.icon());
-        weatherIcon.setColorFilter(w.icon() == R.drawable.ic_w_sun ? 0xFFFFD25A
-                : w.icon() == R.drawable.ic_w_moon ? 0xFFDDE4FF : Color.WHITE);
-        weatherTemp.setText(w.temp + "°");
-        weatherDesc.setText(w.description());
-        weatherCity.setText(w.city.isEmpty() ? "Sensación " + w.feelsLike + "°"
-                : w.city + " · Sensación " + w.feelsLike + "°");
-        weatherExtra.setText("↑ " + w.max + "°   ↓ " + w.min + "°   💧 " + w.humidity + "%   " + w.wind + " km/h");
-        if (!Ui.hasWallpaper(this)) {
+        if (weatherIcon != null) {
+            weatherIcon.setImageResource(w.icon());
+            weatherIcon.setColorFilter(w.icon() == R.drawable.ic_w_sun ? 0xFFFFD25A
+                    : w.icon() == R.drawable.ic_w_moon ? 0xFFDDE4FF : Color.WHITE);
+        }
+        if (weatherTemp != null) weatherTemp.setText(w.temp + "°");
+        if (weatherDesc != null) weatherDesc.setText(w.description());
+        if (weatherCity != null) {
+            weatherCity.setText(w.city.isEmpty() ? "Sensación " + w.feelsLike + "°"
+                    : w.city + " · Sensación " + w.feelsLike + "°");
+        }
+        if (weatherExtra != null) {
+            weatherExtra.setText("↑ " + w.max + "°   ↓ " + w.min + "°   💧 " + w.humidity + "%   " + w.wind + " km/h");
+        }
+        if (weatherBg != null && !Ui.hasWallpaper(this)) {
             weatherBg.setColors(Ui.isDark(this) ? new int[]{0xFF1E1E28, 0xFF121218}
                     : w.isDay ? new int[]{0x993FA9FF, 0x667B4DFF} : new int[]{0x8C2A3A9E, 0x80261A6E});
         }
@@ -1124,7 +1131,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
     private void showCarLights(boolean on) {
         // Cross-fade between the "lights off" and "lights on" photos.
-        if (!hasLightsImage) return;
+        if (!hasLightsImage || carLights == null || car == null) return;
         carLights.animate().alpha(on ? 1f : 0f).setDuration(600).start();
         car.animate().alpha(on ? 0f : 1f).setDuration(600).start();
     }
@@ -1242,9 +1249,9 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private void updateRadio() {
         RadioClient.Station st = radio.current();
         if (st == null) return;
-        fmBand.setText(st.psName.isEmpty() ? "RADIO " + st.bandLabel() : st.bandLabel() + " · " + st.psName);
-        fmFreq.setText(st.frequencyLabel());
-        fmUnit.setText(st.isAm() ? "kHz" : "MHz");
+        if (fmBand != null) fmBand.setText(st.psName.isEmpty() ? "RADIO " + st.bandLabel() : st.bandLabel() + " · " + st.psName);
+        if (fmFreq != null) fmFreq.setText(st.frequencyLabel());
+        if (fmUnit != null) fmUnit.setText(st.isAm() ? "kHz" : "MHz");
     }
 
     private final Runnable radioPoll = new Runnable() {
@@ -1335,29 +1342,31 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
 
         if (!hasNotifAccess && empty) {
-            songSource.setText("PERMISO REQUERIDO");
-            songTitle.setText("Música desactivada");
-            songArtist.setText("Toca aquí para permitir acceso a notificaciones");
-            playBtn.setImageResource(R.drawable.ic_play);
+            if (songSource != null) songSource.setText("PERMISO REQUERIDO");
+            if (songTitle != null) songTitle.setText("Música desactivada");
+            if (songArtist != null) songArtist.setText("Toca aquí para permitir acceso a notificaciones");
+            if (playBtn != null) playBtn.setImageResource(R.drawable.ic_play);
         } else {
-            songSource.setText(s == null ? "MÚSICA" : nowPlaying.label(s).toUpperCase());
-            songTitle.setText(empty ? "Nada sonando" : t.title);
-            songArtist.setText(empty ? "Toca para abrir la música" : t.artist);
-            playBtn.setImageResource(t != null && t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+            if (songSource != null) songSource.setText(s == null ? "MÚSICA" : nowPlaying.label(s).toUpperCase());
+            if (songTitle != null) songTitle.setText(empty ? "Nada sonando" : t.title);
+            if (songArtist != null) songArtist.setText(empty ? "Toca para abrir la música" : t.artist);
+            if (playBtn != null) playBtn.setImageResource(t != null && t.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         }
 
-        if (t != null && t.art != null) {
-            art.setPadding(0, 0, 0, 0);
-            art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            art.clearColorFilter();
-            art.setAlpha(0.40f);
-            art.setImageBitmap(t.art);
-        } else {
-            art.setPadding(dp(80), dp(56), dp(80), dp(170));
-            art.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            art.setImageResource(s == NowPlaying.Source.BT ? R.drawable.ic_bluetooth : R.drawable.ic_music);
-            art.setColorFilter(Color.WHITE);
-            art.setAlpha(0.20f);
+        if (art != null) {
+            if (t != null && t.art != null) {
+                art.setPadding(0, 0, 0, 0);
+                art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                art.clearColorFilter();
+                art.setAlpha(0.40f);
+                art.setImageBitmap(t.art);
+            } else {
+                art.setPadding(dp(80), dp(56), dp(80), dp(170));
+                art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                art.setImageResource(s == NowPlaying.Source.BT ? R.drawable.ic_bluetooth : R.drawable.ic_music);
+                art.setColorFilter(Color.WHITE);
+                art.setAlpha(0.20f);
+            }
         }
 
         // Actualización de la tarjeta de música estilo Cockpit
