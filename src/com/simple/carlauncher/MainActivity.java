@@ -1,6 +1,7 @@
 package com.simple.carlauncher;
 
 import android.Manifest;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -237,31 +238,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         root.setPadding(dp(compact ? 8 : 12), dp(compact ? 6 : 8), dp(compact ? 8 : 12), dp(compact ? 2 : 4));
         root.setBackground(Ui.background(this));
 
-        LinearLayout cards = new LinearLayout(this);
-        if (isDriveViewMode) {
-            // Columna Izquierda: Vista de Conducción (Carretera + Nissan March 2015 + Reloj/Aceite)
-            driveRoadView = new DriveRoadView(this);
-            cards.addView(driveRoadView, weight(1.15f, 0));
-
-            // Columna Derecha: Velocímetro arriba + Control de Música abajo
-            LinearLayout rightCol = new LinearLayout(this);
-            rightCol.setOrientation(LinearLayout.VERTICAL);
-            rightCol.addView(buildSpeedometerCard(compact), vweight(1.12f, 0));
-            rightCol.addView(buildCockpitMusicCard(compact), vweight(1.0f, dp(compact ? 6 : 10)));
-            cards.addView(rightCol, weight(1.25f, dp(compact ? 8 : 12)));
-        } else {
-            // Modo clásico: Mapa + Reloj/Carro + Música
-            cards.addView(buildMapCard(compact), weight(1.25f, 0));
-
-            LinearLayout middle = new LinearLayout(this);
-            middle.setOrientation(LinearLayout.VERTICAL);
-            middle.addView(buildClockCard(compact), vweight(compact ? 0.75f : 0.62f, 0));
-            middle.addView(buildCarCard(compact), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
-            cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
-
-            cards.addView(buildMusicCard(compact), weight(1.05f, dp(compact ? 8 : 12)));
-        }
-
+        View cards = buildCardsContainer(compact);
         root.addView(cards, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(buildDock(compact), new LinearLayout.LayoutParams(-1, dp(compact ? 56 : 74)));
@@ -286,6 +263,366 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         getSharedPreferences("launcher_prefs", MODE_PRIVATE).edit()
                 .putBoolean("drive_view_mode", isDriveViewMode).apply();
         recreate();
+    }
+
+    // ---------- Customización Dinámica de Tarjetas (Card Layout System) ----------
+
+    private static final String[][] AVAILABLE_CARDS = {
+        {"road", "🚗 Carretera 3D (Nissan March + Reloj + Aceite)"},
+        {"speedo", "⚡ Velocímetro HUD (Digital 0-200 km/h)"},
+        {"music_cockpit", "🎵 Música Cockpit (Moderna con Timeline)"},
+        {"map", "🗺️ Mapa en Vivo (Google Maps + Waze)"},
+        {"clock", "⏰ Reloj Grande (Hora + Fecha + Aceite)"},
+        {"car", "🚙 Nissan March Clásico (Clima + Luces)"},
+        {"music_classic", "🎶 Música Clásica (Visualizador de Ondas)"},
+        {"radio", "📻 Radio FM (Dial y Emisoras)"},
+        {"none", "❌ Ocultar (Expandir las demás tarjetas)"}
+    };
+
+    private View createCardByType(String type, boolean compact) {
+        if ("road".equals(type)) {
+            driveRoadView = new DriveRoadView(this);
+            return driveRoadView;
+        } else if ("speedo".equals(type)) {
+            return buildSpeedometerCard(compact);
+        } else if ("music_cockpit".equals(type)) {
+            return buildCockpitMusicCard(compact);
+        } else if ("map".equals(type)) {
+            return buildMapCard(compact);
+        } else if ("clock".equals(type)) {
+            return buildClockCard(compact);
+        } else if ("car".equals(type)) {
+            return buildCarCard(compact);
+        } else if ("music_classic".equals(type)) {
+            return buildMusicCard(compact);
+        } else if ("radio".equals(type)) {
+            return buildFmCard(compact);
+        }
+        return null;
+    }
+
+    private View wrapCardWithSlot(View cardView, String slotKey) {
+        if (cardView == null) return null;
+        FrameLayout wrapper = new FrameLayout(this);
+        wrapper.addView(cardView, new FrameLayout.LayoutParams(-1, -1));
+
+        TextView editBadge = Ui.text(this, "⋮", 16, 0x88FFFFFF);
+        editBadge.setPadding(dp(12), dp(8), dp(12), dp(8));
+        Ui.pressable(editBadge, 0.85f);
+        editBadge.setOnClickListener(v -> showCardOptionsDialog(slotKey));
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        elp.setMargins(0, dp(4), dp(4), 0);
+        wrapper.addView(editBadge, elp);
+
+        wrapper.setLongClickable(true);
+        wrapper.setOnLongClickListener(v -> {
+            showCardOptionsDialog(slotKey);
+            return true;
+        });
+        cardView.setLongClickable(true);
+        cardView.setOnLongClickListener(v -> {
+            showCardOptionsDialog(slotKey);
+            return true;
+        });
+        return wrapper;
+    }
+
+    private View buildCardsContainer(boolean compact) {
+        LinearLayout cards = new LinearLayout(this);
+        SharedPreferences prefs = getSharedPreferences("card_layout_prefs", MODE_PRIVATE);
+
+        if (isDriveViewMode) {
+            String slotMain = prefs.getString("slot_main", "road");
+            String slotTop = prefs.getString("slot_top", "speedo");
+            String slotBottom = prefs.getString("slot_bottom", "music_cockpit");
+            boolean swapCols = prefs.getBoolean("swap_cols", false);
+
+            float ratioMain = prefs.getFloat("ratio_main", 1.15f);
+            float ratioSec = prefs.getFloat("ratio_sec", 1.25f);
+            float ratioTop = prefs.getFloat("ratio_top", 1.12f);
+            float ratioBottom = prefs.getFloat("ratio_bottom", 1.0f);
+
+            View mainColView = null;
+            if (!"none".equals(slotMain)) {
+                View card = createCardByType(slotMain, compact);
+                if (card != null) {
+                    mainColView = wrapCardWithSlot(card, "slot_main");
+                }
+            }
+
+            View secColView = null;
+            boolean hasTop = !"none".equals(slotTop);
+            boolean hasBottom = !"none".equals(slotBottom);
+
+            if (hasTop && hasBottom) {
+                LinearLayout rightCol = new LinearLayout(this);
+                rightCol.setOrientation(LinearLayout.VERTICAL);
+                View topCard = createCardByType(slotTop, compact);
+                if (topCard != null) {
+                    rightCol.addView(wrapCardWithSlot(topCard, "slot_top"), vweight(ratioTop, 0));
+                }
+                View bottomCard = createCardByType(slotBottom, compact);
+                if (bottomCard != null) {
+                    rightCol.addView(wrapCardWithSlot(bottomCard, "slot_bottom"), vweight(ratioBottom, dp(compact ? 6 : 10)));
+                }
+                secColView = rightCol;
+            } else if (hasTop) {
+                View topCard = createCardByType(slotTop, compact);
+                if (topCard != null) secColView = wrapCardWithSlot(topCard, "slot_top");
+            } else if (hasBottom) {
+                View bottomCard = createCardByType(slotBottom, compact);
+                if (bottomCard != null) secColView = wrapCardWithSlot(bottomCard, "slot_bottom");
+            }
+
+            if (mainColView != null && secColView != null) {
+                if (swapCols) {
+                    cards.addView(secColView, weight(ratioSec, 0));
+                    cards.addView(mainColView, weight(ratioMain, dp(compact ? 8 : 12)));
+                } else {
+                    cards.addView(mainColView, weight(ratioMain, 0));
+                    cards.addView(secColView, weight(ratioSec, dp(compact ? 8 : 12)));
+                }
+            } else if (mainColView != null) {
+                cards.addView(mainColView, weight(1f, 0));
+            } else if (secColView != null) {
+                cards.addView(secColView, weight(1f, 0));
+            } else {
+                driveRoadView = new DriveRoadView(this);
+                cards.addView(wrapCardWithSlot(driveRoadView, "slot_main"), weight(1f, 0));
+            }
+        } else {
+            String cLeft = prefs.getString("classic_left", "map");
+            String cMidTop = prefs.getString("classic_mid_top", "clock");
+            String cMidBottom = prefs.getString("classic_mid_bottom", "car");
+            String cRight = prefs.getString("classic_right", "music_classic");
+
+            if (!"none".equals(cLeft)) {
+                View leftCard = createCardByType(cLeft, compact);
+                if (leftCard != null) {
+                    cards.addView(wrapCardWithSlot(leftCard, "classic_left"), weight(1.25f, 0));
+                }
+            }
+
+            boolean hasMidTop = !"none".equals(cMidTop);
+            boolean hasMidBottom = !"none".equals(cMidBottom);
+            if (hasMidTop && hasMidBottom) {
+                LinearLayout middle = new LinearLayout(this);
+                middle.setOrientation(LinearLayout.VERTICAL);
+                View midTop = createCardByType(cMidTop, compact);
+                if (midTop != null) {
+                    middle.addView(wrapCardWithSlot(midTop, "classic_mid_top"), vweight(compact ? 0.75f : 0.62f, 0));
+                }
+                View midBottom = createCardByType(cMidBottom, compact);
+                if (midBottom != null) {
+                    middle.addView(wrapCardWithSlot(midBottom, "classic_mid_bottom"), vweight(compact ? 1.25f : 1.38f, dp(compact ? 8 : 12)));
+                }
+                cards.addView(middle, weight(1f, dp(compact ? 8 : 12)));
+            } else if (hasMidTop) {
+                View midTop = createCardByType(cMidTop, compact);
+                if (midTop != null) cards.addView(wrapCardWithSlot(midTop, "classic_mid_top"), weight(1f, dp(compact ? 8 : 12)));
+            } else if (hasMidBottom) {
+                View midBottom = createCardByType(cMidBottom, compact);
+                if (midBottom != null) cards.addView(wrapCardWithSlot(midBottom, "classic_mid_bottom"), weight(1f, dp(compact ? 8 : 12)));
+            }
+
+            if (!"none".equals(cRight)) {
+                View rightCard = createCardByType(cRight, compact);
+                if (rightCard != null) {
+                    cards.addView(wrapCardWithSlot(rightCard, "classic_right"), weight(1.05f, dp(compact ? 8 : 12)));
+                }
+            }
+        }
+        return cards;
+    }
+
+    private void showCardOptionsDialog(String slotKey) {
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("⚙️ Tarjeta: " + getSlotTitle(slotKey));
+
+        String[] options = {
+            "✏️ Cambiar contenido de esta tarjeta...",
+            "📐 Ajustar tamaños y proporciones...",
+            "⇄ Invertir posición (Izquierda ↔ Derecha)",
+            "❌ Quitar / Ocultar esta tarjeta",
+            "🎨 Administrador completo de pantalla..."
+        };
+
+        b.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0:
+                    showSelectCardTypeDialog(slotKey);
+                    break;
+                case 1:
+                    showAdjustSizeDialog();
+                    break;
+                case 2:
+                    toggleSwapColumns();
+                    break;
+                case 3:
+                    hideSlot(slotKey);
+                    break;
+                case 4:
+                    showLayoutCustomizationDialog();
+                    break;
+            }
+        });
+        b.setNegativeButton("Cancelar", null);
+        b.show();
+    }
+
+    private void showSelectCardTypeDialog(String slotKey) {
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("Elegir contenido (" + getSlotTitle(slotKey) + ")");
+
+        String[] titles = new String[AVAILABLE_CARDS.length];
+        for (int i = 0; i < AVAILABLE_CARDS.length; i++) {
+            titles[i] = AVAILABLE_CARDS[i][1];
+        }
+
+        b.setItems(titles, (dialog, which) -> {
+            String selectedType = AVAILABLE_CARDS[which][0];
+            getSharedPreferences("card_layout_prefs", MODE_PRIVATE).edit()
+                    .putString(slotKey, selectedType).apply();
+            recreate();
+        });
+        b.setNegativeButton("Cancelar", null);
+        b.show();
+    }
+
+    private void hideSlot(String slotKey) {
+        getSharedPreferences("card_layout_prefs", MODE_PRIVATE).edit()
+                .putString(slotKey, "none").apply();
+        toast("Tarjeta ocultada. Puedes reactivarla desde el menú.");
+        recreate();
+    }
+
+    private void toggleSwapColumns() {
+        SharedPreferences prefs = getSharedPreferences("card_layout_prefs", MODE_PRIVATE);
+        boolean swap = prefs.getBoolean("swap_cols", false);
+        prefs.edit().putBoolean("swap_cols", !swap).apply();
+        toast(swap ? "Columnas en posición original" : "Columnas invertidas");
+        recreate();
+    }
+
+    private void showAdjustSizeDialog() {
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("📐 Proporciones y Tamaños de Tarjeta");
+
+        String[] options = {
+            "Ancho: 50% Izquierda - 50% Derecha (Equitativo)",
+            "Ancho: 60% Izquierda - 40% Derecha (Izquierda ancha)",
+            "Ancho: 40% Izquierda - 60% Derecha (Derecha ancha)",
+            "Ancho: 70% Izquierda - 30% Derecha (Izquierda gigante)",
+            "Alto derecha: 50% Arriba - 50% Abajo (Equitativo)",
+            "Alto derecha: 65% Arriba - 35% Abajo (Velocímetro grande)",
+            "Alto derecha: 35% Arriba - 65% Abajo (Música grande)",
+            "🔄 Restablecer proporciones originales"
+        };
+
+        b.setItems(options, (dialog, which) -> {
+            SharedPreferences.Editor ed = getSharedPreferences("card_layout_prefs", MODE_PRIVATE).edit();
+            switch (which) {
+                case 0:
+                    ed.putFloat("ratio_main", 1.0f).putFloat("ratio_sec", 1.0f);
+                    break;
+                case 1:
+                    ed.putFloat("ratio_main", 1.5f).putFloat("ratio_sec", 1.0f);
+                    break;
+                case 2:
+                    ed.putFloat("ratio_main", 1.0f).putFloat("ratio_sec", 1.5f);
+                    break;
+                case 3:
+                    ed.putFloat("ratio_main", 2.3f).putFloat("ratio_sec", 1.0f);
+                    break;
+                case 4:
+                    ed.putFloat("ratio_top", 1.0f).putFloat("ratio_bottom", 1.0f);
+                    break;
+                case 5:
+                    ed.putFloat("ratio_top", 1.8f).putFloat("ratio_bottom", 1.0f);
+                    break;
+                case 6:
+                    ed.putFloat("ratio_top", 1.0f).putFloat("ratio_bottom", 1.8f);
+                    break;
+                case 7:
+                    ed.putFloat("ratio_main", 1.15f).putFloat("ratio_sec", 1.25f)
+                      .putFloat("ratio_top", 1.12f).putFloat("ratio_bottom", 1.0f);
+                    break;
+            }
+            ed.apply();
+            recreate();
+        });
+        b.setNegativeButton("Cerrar", null);
+        b.show();
+    }
+
+    private void showLayoutCustomizationDialog() {
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("🎨 Personalizar Tarjetas y Pantalla");
+
+        SharedPreferences prefs = getSharedPreferences("card_layout_prefs", MODE_PRIVATE);
+        boolean swap = prefs.getBoolean("swap_cols", false);
+
+        String slotMain = prefs.getString("slot_main", "road");
+        String slotTop = prefs.getString("slot_top", "speedo");
+        String slotBottom = prefs.getString("slot_bottom", "music_cockpit");
+
+        String[] options = {
+            "🔀 Alternar Modo General (" + (isDriveViewMode ? "2 Columnas Conducción" : "3 Columnas Clásico") + ")",
+            "📍 Tarjeta Principal (" + (swap ? "Derecha" : "Izquierda") + "): " + getCardName(slotMain),
+            "📍 Tarjeta Secundaria Superior: " + getCardName(slotTop),
+            "📍 Tarjeta Secundaria Inferior: " + getCardName(slotBottom),
+            "⇄ Invertir posición de columnas (" + (swap ? "Principal en Derecha" : "Principal en Izquierda") + ")",
+            "📐 Ajustar tamaños y proporciones...",
+            "🔄 Restablecer todas las tarjetas de fábrica"
+        };
+
+        b.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0:
+                    toggleViewMode();
+                    break;
+                case 1:
+                    showSelectCardTypeDialog("slot_main");
+                    break;
+                case 2:
+                    showSelectCardTypeDialog("slot_top");
+                    break;
+                case 3:
+                    showSelectCardTypeDialog("slot_bottom");
+                    break;
+                case 4:
+                    toggleSwapColumns();
+                    break;
+                case 5:
+                    showAdjustSizeDialog();
+                    break;
+                case 6:
+                    prefs.edit().clear().apply();
+                    toast("Tarjetas restablecidas a fábrica");
+                    recreate();
+                    break;
+            }
+        });
+        b.setNegativeButton("Cerrar", null);
+        b.show();
+    }
+
+    private String getCardName(String type) {
+        for (String[] pair : AVAILABLE_CARDS) {
+            if (pair[0].equals(type)) return pair[1];
+        }
+        return type;
+    }
+
+    private String getSlotTitle(String slotKey) {
+        if ("slot_main".equals(slotKey)) return "Columna Principal";
+        if ("slot_top".equals(slotKey)) return "Columna Secundaria Superior";
+        if ("slot_bottom".equals(slotKey)) return "Columna Secundaria Inferior";
+        if ("classic_left".equals(slotKey)) return "Columna Izquierda";
+        if ("classic_mid_top".equals(slotKey)) return "Centro Superior";
+        if ("classic_mid_bottom".equals(slotKey)) return "Centro Inferior";
+        if ("classic_right".equals(slotKey)) return "Columna Derecha";
+        return slotKey;
     }
 
     private String formatTime(long ms) {
@@ -1410,7 +1747,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         dock.setGravity(Gravity.CENTER_VERTICAL);
         dock.addView(dockIcon(isDriveViewMode ? R.drawable.ic_compass : R.drawable.ic_car,
                 this::toggleViewMode, () -> openWaze(), compact), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_bluetooth, this::openBluetooth, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_spotify, this::openSpotify, this::openBluetooth, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_radio, this::openRadio, compact), weight(1f, 0));
 
         FrameLayout center = new FrameLayout(this);
@@ -1419,13 +1756,17 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         center.addView(ring, new FrameLayout.LayoutParams(ringSize, ringSize, Gravity.CENTER));
         Ui.pressable(ring, 0.88f);
         ring.setOnClickListener(v -> startActivity(new Intent(this, AppsActivity.class)));
+        ring.setOnLongClickListener(v -> {
+            showLayoutCustomizationDialog();
+            return true;
+        });
         dock.addView(center, weight(1f, 0));
 
         dock.addView(dockIcon(R.drawable.ic_w_moon,
                 () -> startActivity(new Intent(this, ScreenOffActivity.class)), compact), weight(1f, 0));
-        dock.addView(dockIcon(R.drawable.ic_settings, this::openEqualizer, this::showSelectEqualizerDialog, compact), weight(1f, 0));
+        dock.addView(dockIcon(R.drawable.ic_youtube, this::openYouTube, this::openEqualizer, compact), weight(1f, 0));
         dock.addView(dockIcon(R.drawable.ic_gear, this::openSettings,
-                () -> startActivity(new Intent(this, SetupActivity.class)), compact), weight(1f, 0));
+                this::showLayoutCustomizationDialog, compact), weight(1f, 0));
         if (Ui.hasWallpaper(this)) {
             GradientDrawable dockBg = new GradientDrawable();
             dockBg.setColor(0x40000000);
@@ -1471,6 +1812,34 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         if (Profile.isNwd(this)) startActivity(new Intent(this, BtActivity.class));
         else if (!launchByKeyword("bluetooth", "bt music", "btmusic", "phone link"))
             safeStart(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+    }
+
+    private void openSpotify() {
+        if (launchByKeyword("spotify", "com.spotify.music", "com.spotify.lite")) return;
+        try {
+            Intent intent = getPackageManager().getLaunchIntentForPackage("com.spotify.music");
+            if (intent != null && safeStart(intent)) return;
+        } catch (Throwable ignored) {}
+        try {
+            Intent web = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://open.spotify.com"));
+            safeStart(web);
+        } catch (Throwable t) {
+            toast("Spotify no está instalado");
+        }
+    }
+
+    private void openYouTube() {
+        if (launchByKeyword("youtube", "com.google.android.youtube", "newpipe", "revanced")) return;
+        try {
+            Intent intent = getPackageManager().getLaunchIntentForPackage("com.google.android.youtube");
+            if (intent != null && safeStart(intent)) return;
+        } catch (Throwable ignored) {}
+        try {
+            Intent web = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com"));
+            safeStart(web);
+        } catch (Throwable t) {
+            toast("YouTube no está instalado");
+        }
     }
 
     private void openEqualizer() {
